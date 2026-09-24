@@ -9,6 +9,16 @@ type PersonIdentityProps = {
 
 export function PersonIdentity({ node, showRollup, size = 'card' }: PersonIdentityProps) {
   const badge = headcountLabel(node, showRollup)
+  const details = [
+    ['Employee ID', node.username],
+    ['Status', node.status],
+    ['Division', node.division],
+    ['Department', node.department],
+    ['Department category', node.departmentCategory],
+    ['Project', node.projectName],
+    ['TSM', node.tsm],
+    ['Last working day', node.lastWorkingDay],
+  ].filter((detail): detail is [string, string] => Boolean(detail[1]))
 
   return (
     <div className={`identity identity--${size}`}>
@@ -22,6 +32,24 @@ export function PersonIdentity({ node, showRollup, size = 'card' }: PersonIdenti
           <p className={`badge ${node.section ? `badge--${node.section.toLowerCase()}` : 'badge--neutral'}`}>
             {badge}
           </p>
+        ) : null}
+        {size === 'hero' && (node.email || details.length > 0) ? (
+          <dl className="person-details">
+            {node.email ? (
+              <div>
+                <dt>Email</dt>
+                <dd>
+                  <a href={`mailto:${node.email}`}>{node.email}</a>
+                </dd>
+              </div>
+            ) : null}
+            {details.map(([label, value]) => (
+              <div key={label}>
+                <dt>{label}</dt>
+                <dd>{value}</dd>
+              </div>
+            ))}
+          </dl>
         ) : null}
       </div>
     </div>

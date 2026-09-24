@@ -3,9 +3,19 @@ export const SECTIONS = ['IT', 'BPO'] as const
 export type OrgSection = (typeof SECTIONS)[number]
 
 export type OrgNode = {
+  username?: string
   name: string
+  email?: string
   designation: string
-  section: OrgSection | null
+  status?: string
+  manager?: string
+  division?: string
+  department?: string
+  departmentCategory?: string
+  projectName?: string
+  lastWorkingDay?: string
+  tsm?: string
+  section: string | null
   count: number | null
   children: OrgNode[]
 }
@@ -16,10 +26,6 @@ export type SearchHit = {
   path: OrgPath
   node: OrgNode
   ancestors: string[]
-}
-
-export function isSection(value: unknown): value is OrgSection {
-  return value === 'IT' || value === 'BPO'
 }
 
 export function isOrgNode(value: unknown): value is OrgNode {
@@ -34,7 +40,7 @@ export function isOrgNode(value: unknown): value is OrgNode {
   if (typeof candidate.designation !== 'string' || candidate.designation.trim() === '') {
     return false
   }
-  if (candidate.section !== null && !isSection(candidate.section)) {
+  if (candidate.section !== null && typeof candidate.section !== 'string') {
     return false
   }
   if (candidate.count !== null && (typeof candidate.count !== 'number' || !Number.isFinite(candidate.count))) {

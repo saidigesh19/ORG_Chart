@@ -101,6 +101,10 @@ export function headcountLabel(node: OrgNode, showRollup: boolean): string | nul
   const rolled = rollupHeadcount(node)
   const own = node.count
 
+  if (!showRollup && node.username) {
+    return node.division ?? node.section
+  }
+
   if (showRollup) {
     if (rolled <= 0) {
       return null
@@ -164,11 +168,24 @@ export function searchPeople(index: SearchHit[], query: string, limit = 8): Sear
     .map((hit) => {
       const name = hit.node.name.toLowerCase()
       const title = hit.node.designation.toLowerCase()
+      const metadata = [
+        hit.node.username,
+        hit.node.email,
+        hit.node.division,
+        hit.node.department,
+        hit.node.departmentCategory,
+        hit.node.projectName,
+        hit.node.tsm,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
       let score = 0
       if (name === q) score = 100
       else if (name.startsWith(q)) score = 80
       else if (name.includes(q)) score = 60
       else if (title.includes(q)) score = 30
+      else if (metadata.includes(q)) score = 20
       else return null
       return { hit, score }
     })

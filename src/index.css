@@ -101,6 +101,37 @@ p {
   justify-content: flex-end;
 }
 
+.data-status {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 12px;
+  padding: 8px 10px;
+  border-left: 3px solid #698267;
+  background: rgba(255, 252, 248, 0.55);
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.data-status--warning {
+  border-left-color: #b47b2b;
+}
+
+.data-status details {
+  text-align: right;
+}
+
+.data-status summary {
+  color: var(--accent-dark);
+  cursor: pointer;
+}
+
+.data-status ul {
+  margin: 8px 0 0;
+  padding-left: 20px;
+  text-align: left;
+}
+
 .search {
   position: relative;
   min-width: min(320px, 100%);
@@ -345,6 +376,31 @@ p {
   border-color: var(--line);
   color: var(--muted);
   background: #f3eee7;
+}
+
+.person-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px 20px;
+  margin: 20px 0 0;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.person-details dt {
+  color: var(--muted);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.person-details dd {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.person-details a {
+  color: var(--accent-dark);
 }
 
 .reports-head {
@@ -679,10 +735,15 @@ code {
   }
 
   .topbar,
+  .data-status,
   .crumb-row,
   .reports-head {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .data-status details {
+    text-align: left;
   }
 
   .topbar-tools {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { loadOrgData } from './lib/load-org'
+import { loadOrgData, type LoadedOrgData } from './lib/load-org'
 import {
   flattenSearchIndex,
   formatPeople,
@@ -21,6 +21,7 @@ type ViewMode = 'chart' | 'directory'
 
 export default function App() {
   const [root, setRoot] = useState<OrgNode | null>(null)
+  const [dataset, setDataset] = useState<Omit<LoadedOrgData, 'root'> | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [path, setPath] = useState<OrgPath>([])
   const [showRollup, setShowRollup] = useState(false)
@@ -31,7 +32,12 @@ export default function App() {
     loadOrgData()
       .then((data) => {
         if (!cancelled) {
-          setRoot(data)
+          setRoot(data.root)
+          setDataset({
+            employeeCount: data.employeeCount,
+            source: data.source,
+            warnings: data.warnings,
+          })
         }
       })
       .catch((reason: unknown) => {
@@ -108,7 +114,7 @@ export default function App() {
         <div className="status-panel">
           <h1>Unable to load the organisation chart</h1>
           <p>{error}</p>
-          <p>Place a valid file at <code>public/org-data.json</code> and refresh.</p>
+          <p>Place a valid workbook at <code>public/org-data.xlsx</code> and refresh.</p>
         </div>
       </main>
     )
@@ -165,6 +171,25 @@ export default function App() {
           </label>
         </div>
       </header>
+
+      {dataset ? (
+        <aside className={`data-status ${dataset.warnings.length > 0 ? 'data-status--warning' : ''}`}>
+          <span>
+            Source: <strong>{dataset.source === 'Excel' ? 'org-data.xlsx' : 'org-data.json'}</strong>
+            {dataset.employeeCount !== null ? ` · ${formatPeople(dataset.employeeCount)}` : ''}
+          </span>
+          {dataset.warnings.length > 0 ? (
+            <details>
+              <summary>{dataset.warnings.length} data notice{dataset.warnings.length === 1 ? '' : 's'}</summary>
+              <ul>
+                {dataset.warnings.map((warning) => (
+                  <li key={warning}>{warning}</li>
+                ))}
+              </ul>
+            </details>
+          ) : null}
+        </aside>
+      ) : null}
 
       <div className="crumb-row">
         <Breadcrumbs trail={trail} onNavigate={navigate} />

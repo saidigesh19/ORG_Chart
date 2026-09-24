@@ -41,7 +41,7 @@ export function SearchBox({ index, onJump }: SearchBoxProps) {
       <input
         id={inputId}
         type="search"
-        placeholder="Search by name or title"
+        placeholder="Search people, IDs, projects…"
         value={query}
         autoComplete="off"
         role="combobox"

@@ -14,7 +14,21 @@ npm run dev
 
 ## Data
 
-Replace `public/org-data.json`. The app fetches it at runtime. Each node:
+Place the current employee workbook at `public/org-data.xlsx`. The app reads the
+`PMO Report` sheet (or the first sheet if that name is absent) every time it
+loads. Replace the file and refresh the page when employee data changes.
+
+The header row must contain:
+
+`Username`, `Name`, `Email`, `Designation`, `Status`, `Manager`, `Division`,
+`Department`, `Department Category`, `Project Name`, `Last Working Day`, `TSM`
+
+Reporting lines are built by matching `Manager` to `Name` without regard to
+capitalisation or surrounding spaces. Status and organisation fields accept any
+text; rows are not filtered by Status.
+
+The workbook is ignored by Git because it contains employee data. If it is
+missing or invalid, the app falls back to `public/org-data.json`. Each JSON node:
 
 | Field | Type | Notes |
 | --- | --- | --- |

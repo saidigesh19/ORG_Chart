@@ -37,7 +37,7 @@ function ChartBox({ node, path, selectedPath, expanded, showRollup, onSelect, on
   const badge = headcountLabel(node, showRollup)
 
   const isTeam = node.children.every((child) => child.children.length === 0)
-  const unlisted = isTeam && node.count != null ? node.count - node.children.length : 0
+  const unlisted = isTeam && !node.username && node.count != null ? node.count - node.children.length : 0
   const asRoster = isOpen && isTeam && node.children.length > ROSTER_THRESHOLD
 
   function memberBox(child: OrgNode, index: number) {
