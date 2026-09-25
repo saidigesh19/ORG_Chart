@@ -22,6 +22,7 @@ import {
   parentPath,
   pathKey,
 } from '../lib/org-tree'
+import { downloadChartImage, downloadChartPdf } from '../lib/export-chart'
 import { PersonPanel } from './PersonPanel'
 
 type OrgChartProps = {
@@ -215,6 +216,7 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
   const profileOpenRef = useRef(false)
   const skipRevealRef = useRef(false)
   const [levelPreset, setLevelPreset] = useState<number | 'all' | null>(1)
+  const [exporting, setExporting] = useState<'image' | 'pdf' | null>(null)
   const levelsId = useId()
   const zoomId = useId()
   const dockPanelId = useId()
@@ -608,6 +610,26 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
     }
   }
 
+  async function exportChart(kind: 'image' | 'pdf') {
+    const canvas = canvasRef.current
+    if (!canvas || exporting) {
+      return
+    }
+    setProfileOpen(false)
+    setExporting(kind)
+    try {
+      if (kind === 'image') {
+        await downloadChartImage(canvas)
+      } else {
+        await downloadChartPdf(canvas)
+      }
+    } catch {
+      window.alert('Could not download the chart. Try again.')
+    } finally {
+      setExporting(null)
+    }
+  }
+
   const zoomStyle = { '--chart-zoom': zoom / 100 } as CSSProperties
   const previewNode = getNodeAtPath(root, previewPath)
   const managerNode = previewPath.length > 0 ? getNodeAtPath(root, parentPath(previewPath)) ?? undefined : undefined
@@ -615,7 +637,7 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
   const currentLevel = LEVEL_OPTIONS.find((option) => option.depth === levelPreset) ?? LEVEL_OPTIONS[1]
 
   return (
-    <section className="chart-wrap" aria-label="Organisation chart">
+    <section className={`chart-wrap ${exporting ? 'is-exporting' : ''}`} aria-label="Organisation chart">
       {activeFocusPath ? (
         <div className="focus-banner">
           <span>
@@ -771,6 +793,27 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
                   Start from here
                 </button>
               ) : null}
+            </section>
+
+            <section className="dock-block">
+              <p className="dock-title">Download</p>
+              <p className="dock-hint">Current org chart only</p>
+              <div className="dock-levels" role="group" aria-label="Download chart">
+                <button
+                  type="button"
+                  disabled={exporting !== null}
+                  onClick={() => void exportChart('image')}
+                >
+                  {exporting === 'image' ? 'Saving…' : 'Image'}
+                </button>
+                <button
+                  type="button"
+                  disabled={exporting !== null}
+                  onClick={() => void exportChart('pdf')}
+                >
+                  {exporting === 'pdf' ? 'Saving…' : 'PDF'}
+                </button>
+              </div>
             </section>
           </div>
         ) : null}

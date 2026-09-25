@@ -1296,6 +1296,10 @@ code {
   margin: 0 auto;
 }
 
+.chart-wrap.is-exporting .org-box:hover {
+  transform: none;
+}
+
 .org-node {
   --stem: 18px;
   display: flex;
