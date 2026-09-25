@@ -1,5 +1,6 @@
 import { unzipSync } from 'fflate'
 import type { OrgNode } from '../types/org'
+import { prepareOrgTree } from './org-tree'
 
 const REQUIRED_HEADERS = [
   'Username',
@@ -251,10 +252,9 @@ export function workbookToOrg(buffer: ArrayBuffer): WorkbookOrgData {
     const parent = parents.get(index)
     if (parent !== undefined) nodes[parent].children.push(node)
   })
-  nodes.forEach((node) => node.children.sort((a, b) => a.name.localeCompare(b.name)))
 
-  const roots = nodes.filter((_, index) => !parents.has(index)).sort((a, b) => a.name.localeCompare(b.name))
-  const root =
+  const roots = nodes.filter((_, index) => !parents.has(index))
+  const root = prepareOrgTree(
     roots.length === 1
       ? roots[0]
       : {
@@ -263,7 +263,8 @@ export function workbookToOrg(buffer: ArrayBuffer): WorkbookOrgData {
           section: null,
           count: 0,
           children: roots,
-        }
+        },
+  )
 
   if (roots.length > 1) {
     warnings.push(`${roots.length} top-level reporting lines are grouped under an Organisation node.`)

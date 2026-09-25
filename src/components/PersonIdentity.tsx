@@ -9,17 +9,20 @@ type PersonIdentityProps = {
 }
 
 function detailFields(node: OrgNode): Array<[string, string]> {
-  return (
-    [
-      ['Employee ID', node.username],
-      ['Division', node.division],
-      ['Department', node.department],
-      ['Category', node.departmentCategory],
-      ['Project', node.projectName],
-      ['TSM', node.tsm],
-      ['Last day', node.lastWorkingDay],
-    ] as Array<[string, string | undefined]>
-  ).filter((detail): detail is [string, string] => Boolean(detail[1]))
+  const rows =
+    node.kind === 'project'
+      ? [
+          ['Category', node.departmentCategory],
+        ]
+      : [
+          ['Employee ID', node.username],
+          ['Category', node.departmentCategory],
+          ['Project', node.projectName],
+          ['TSM', node.tsm],
+          ['Last day', node.lastWorkingDay],
+        ]
+
+  return rows.filter((detail): detail is [string, string] => Boolean(detail[1]))
 }
 
 export function PersonDetails({ node }: { node: OrgNode }) {
@@ -60,6 +63,9 @@ export function PersonIdentity({ node, showRollup, size = 'card', details }: Per
           {initials(node.name)}
         </div>
         <div className="identity-copy">
+          {node.division ?? node.section ? (
+            <p className="identity-dept">{node.division ?? node.section}</p>
+          ) : null}
           <p className="identity-name">{node.name}</p>
           <p className="identity-title">{node.designation}</p>
           {node.status || badge ? (

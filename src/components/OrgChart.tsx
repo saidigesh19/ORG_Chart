@@ -14,12 +14,13 @@ import {
   divisionTone,
   expandableKeys,
   getNodeAtPath,
+  hasProjectChildren,
   headcountLabel,
   isPathWithin,
+  isProjectNode,
   keysToDepth,
   parentPath,
   pathKey,
-  rollupHeadcount,
 } from '../lib/org-tree'
 import { PersonPanel } from './PersonPanel'
 
@@ -40,9 +41,6 @@ type ChartBoxProps = {
   siblingCount: number
   isolate: boolean
 }
-
-/** Teams wider than this are laid out as a roster block instead of a row of branches. */
-const ROSTER_THRESHOLD = 4
 
 const POPOVER_WIDTH = 360
 const POPOVER_GAP = 12
@@ -70,9 +68,7 @@ function deepestVisiblePath(path: OrgPath, expanded: Set<string>): OrgPath {
 const LEVEL_OPTIONS: { label: string; depth: number | 'all'; hint: string }[] = [
   { label: 'Top', depth: 0, hint: 'Only the person at the top' },
   { label: 'L1', depth: 1, hint: 'Top person and their direct reports' },
-  { label: 'L2', depth: 2, hint: 'Two reporting levels below the top' },
-  { label: 'L3', depth: 3, hint: 'Three reporting levels below the top' },
-  { label: 'All', depth: 'all', hint: 'Everyone in this view' },
+  { label: 'L2', depth: 2, hint: 'Two reporting levels, then projects under L2' },
 ]
 
 function findCard(scroller: HTMLElement | null, path: OrgPath): HTMLElement | null {
@@ -100,7 +96,7 @@ function ChartBox({
   const isOpen = hasChildren && expanded.has(key)
   const badge = headcountLabel(node, showRollup)
   const tone = divisionTone(node.division ?? node.section)
-  const totalReports = Math.max(rollupHeadcount(node) - (node.username ? 1 : 0), 0)
+  const projectCount = hasProjectChildren(node) ? node.children.length : 0
 
   // While a branch is isolated, an ancestor of the selection shows only the
   // child that leads to it, so peer branches do not crowd the view.
@@ -109,10 +105,6 @@ function ChartBox({
     .map((child, index) => ({ child, index }))
     .filter(({ index }) => !leadsToSelection || index === selectedPath[path.length])
   const hiddenPeers = node.children.length - shownChildren.length
-
-  const isTeam = node.children.every((child) => child.children.length === 0)
-  const unlisted = isTeam && !node.username && node.count != null ? node.count - node.children.length : 0
-  const asRoster = isOpen && isTeam && shownChildren.length > ROSTER_THRESHOLD
 
   function onKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>) {
     const index = path[path.length - 1] ?? 0
@@ -131,30 +123,6 @@ function ChartBox({
     }
   }
 
-  function memberBox(child: OrgNode, index: number) {
-    const childPath = [...path, index]
-    const childKey = pathKey(childPath)
-    return (
-      <button
-        type="button"
-        key={childKey}
-        data-path={childKey}
-        role="treeitem"
-        aria-level={childPath.length + 1}
-        aria-selected={childKey === pathKey(selectedPath)}
-        className={`org-member division-${divisionTone(child.division ?? child.section)} ${
-          childKey === pathKey(selectedPath) ? 'is-selected' : ''
-        }`}
-        onClick={() => onSelect(childPath)}
-      >
-        <span className="org-member-name">{child.name}</span>
-        <span className="org-member-title">{child.designation}</span>
-      </button>
-    )
-  }
-
-  const ghost = unlisted > 0 ? <p className="org-ghost">{unlisted} more not named in data</p> : null
-
   return (
     <div
       className="org-node"
@@ -166,22 +134,28 @@ function ChartBox({
     >
       <button
         type="button"
-        className={`org-box org-box-main division-${tone} ${selected ? 'is-selected' : ''} ${onTrail ? 'is-trail' : ''}`}
+        className={`org-box org-box-main division-${tone} ${selected ? 'is-selected' : ''} ${onTrail ? 'is-trail' : ''} ${isProjectNode(node) ? 'is-project' : ''}`}
         aria-expanded={hasChildren ? isOpen : undefined}
         onClick={() => onSelect(path)}
         onKeyDown={onKeyDown}
       >
         <span className="org-box-body">
+          {node.division ?? node.section ? (
+            <span className="org-box-dept">{node.division ?? node.section}</span>
+          ) : null}
           <span className="org-box-name">{node.name}</span>
           <span className="org-box-title">{node.designation}</span>
-          {badge ? <span className="org-box-badge">{badge}</span> : null}
+          {projectCount > 0 || badge ? (
+            <span className="org-box-meta">
+              {projectCount > 0 ? (
+                <span className="org-box-projects">
+                  {projectCount} {projectCount === 1 ? 'project' : 'projects'}
+                </span>
+              ) : null}
+              {badge ? <span className="org-box-badge">{badge}</span> : null}
+            </span>
+          ) : null}
         </span>
-        {hasChildren ? (
-          <span className="org-toggle">
-            {isOpen ? '−' : '+'} {node.children.length}
-            {totalReports > node.children.length ? ` · ${totalReports} total` : ''}
-          </span>
-        ) : null}
       </button>
 
       {isOpen && hiddenPeers > 0 ? (
@@ -190,14 +164,7 @@ function ChartBox({
         </p>
       ) : null}
 
-      {asRoster ? (
-        <div className="org-roster" role="group">
-          {shownChildren.map(({ child, index }) => memberBox(child, index))}
-          {ghost}
-        </div>
-      ) : null}
-
-      {isOpen && !asRoster ? (
+      {isOpen ? (
         <div className="org-kids" role="group">
           {shownChildren.map(({ child, index }) => (
             <div className="org-branch" key={pathKey([...path, index])}>
@@ -213,11 +180,8 @@ function ChartBox({
               />
             </div>
           ))}
-          {ghost ? <div className="org-branch">{ghost}</div> : null}
         </div>
       ) : null}
-
-      {!hasChildren && unlisted > 0 ? <div className="org-roster">{ghost}</div> : null}
     </div>
   )
 }
@@ -380,7 +344,7 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
     }
 
     function personFromEvent(target: EventTarget | null): OrgPath | null {
-      const host = (target as HTMLElement | null)?.closest('.org-box, .org-member')
+      const host = (target as HTMLElement | null)?.closest('.org-box')
       if (!host) {
         return null
       }
@@ -404,7 +368,7 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
         return
       }
       const next = event.relatedTarget as HTMLElement | null
-      if (next?.closest('.org-box, .org-member, .person-popover')) {
+      if (next?.closest('.org-box, .person-popover')) {
         return
       }
       scheduleHide()
@@ -493,7 +457,7 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
       if (popoverRef.current?.contains(target)) {
         return
       }
-      if (target?.closest('.org-box, .org-member')) {
+      if (target?.closest('.org-box')) {
         return
       }
       setProfileOpen(false)

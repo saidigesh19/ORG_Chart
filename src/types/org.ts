@@ -17,6 +17,8 @@ export type OrgNode = {
   tsm?: string
   section: string | null
   count: number | null
+  kind?: 'person' | 'project'
+  members?: OrgNode[]
   children: OrgNode[]
 }
 

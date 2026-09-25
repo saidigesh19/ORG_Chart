@@ -116,26 +116,16 @@ export function divisionTone(division?: string | null): DivisionTone {
 }
 
 export function headcountLabel(node: OrgNode, showRollup: boolean): string | null {
+  if (!showRollup) {
+    return null
+  }
+
   const rolled = rollupHeadcount(node)
-  const own = node.count
-
-  if (!showRollup && node.username) {
-    return node.division ?? node.section
+  if (rolled <= 0) {
+    return null
   }
 
-  if (showRollup) {
-    if (rolled <= 0) {
-      return null
-    }
-    const body = `${formatPeople(rolled)} total`
-    return node.section ? `${node.section} · ${body}` : body
-  }
-
-  if (node.section && own != null) {
-    return `${node.section} · ${formatPeople(own)}`
-  }
-
-  return null
+  return `${formatPeople(rolled)} total`
 }
 
 export function expandableKeys(node: OrgNode, path: OrgPath = [], keys: string[] = []): string[] {
@@ -167,6 +157,11 @@ export function flattenSearchIndex(root: OrgNode): SearchHit[] {
 
   function walk(node: OrgNode, path: OrgPath, ancestors: string[]) {
     hits.push({ path, node, ancestors })
+    if (node.kind === 'project' && node.members) {
+      node.members.forEach((member) => {
+        hits.push({ path, node: member, ancestors: [...ancestors, node.name] })
+      })
+    }
     node.children.forEach((child, index) => {
       walk(child, [...path, index], [...ancestors, node.name])
     })
@@ -174,6 +169,143 @@ export function flattenSearchIndex(root: OrgNode): SearchHit[] {
 
   walk(root, [], [])
   return hits
+}
+
+export function isProjectNode(node: OrgNode): boolean {
+  return node.kind === 'project'
+}
+
+export function hasProjectChildren(node: OrgNode): boolean {
+  return node.children.length > 0 && node.children.every(isProjectNode)
+}
+
+export function orgGroupRank(node: OrgNode): number {
+  const division = (node.division ?? node.section ?? '').trim().toLowerCase()
+  const department = (node.department ?? '').trim().toLowerCase()
+  const category = (node.departmentCategory ?? '').trim().toLowerCase()
+  const blob = `${division} ${department} ${category}`
+
+  if (division === 'it') {
+    return 0
+  }
+
+  const itRelated =
+    division.startsWith('it') ||
+    /\bit\b/.test(division) ||
+    department.startsWith('it') ||
+    department.includes('infra') ||
+    department.includes('staffing') ||
+    department === 'engineering' ||
+    (department === 'technical' && division !== 'bpo')
+
+  if (itRelated) {
+    return 1
+  }
+
+  if (division === 'bpo' || department.startsWith('operations-') || blob.includes('bpo')) {
+    return 2
+  }
+
+  return 3
+}
+
+export function compareOrgSiblings(a: OrgNode, b: OrgNode): number {
+  return orgGroupRank(a) - orgGroupRank(b) || a.name.localeCompare(b.name)
+}
+
+function majorityField(nodes: OrgNode[], pick: (node: OrgNode) => string | undefined): string | undefined {
+  const counts = new Map<string, number>()
+  for (const node of nodes) {
+    const value = pick(node)
+    if (!value) {
+      continue
+    }
+    counts.set(value, (counts.get(value) ?? 0) + 1)
+  }
+
+  let best: string | undefined
+  let highest = 0
+  for (const [value, count] of counts) {
+    if (count > highest) {
+      best = value
+      highest = count
+    }
+  }
+  return best
+}
+
+function normalizeProjectName(value?: string): string {
+  const trimmed = value?.trim() ?? ''
+  if (!trimmed || /^(n\/?a|null|unassigned|-)$/i.test(trimmed)) {
+    return 'Unassigned'
+  }
+  return trimmed
+}
+
+function collectDescendants(node: OrgNode): OrgNode[] {
+  const people: OrgNode[] = []
+  function walk(current: OrgNode) {
+    current.children.forEach((child) => {
+      people.push(child)
+      walk(child)
+    })
+  }
+  walk(node)
+  return people
+}
+
+function slimPerson(node: OrgNode): OrgNode {
+  return { ...node, children: [], members: undefined }
+}
+
+function buildProjectNodes(manager: OrgNode): OrgNode[] {
+  const groups = new Map<string, OrgNode[]>()
+  collectDescendants(manager).forEach((person) => {
+    const project = normalizeProjectName(person.projectName)
+    const members = groups.get(project) ?? []
+    members.push(slimPerson(person))
+    groups.set(project, members)
+  })
+
+  return Array.from(groups.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([name, members]) => {
+      const division = majorityField(members, (member) => member.division)
+      const department = majorityField(members, (member) => member.department)
+      return {
+        name,
+        designation: members.length === 1 ? '1 person' : `${members.length} people`,
+        division,
+        department,
+        departmentCategory: majorityField(members, (member) => member.departmentCategory),
+        projectName: name === 'Unassigned' ? undefined : name,
+        section: division ?? majorityField(members, (member) => member.section ?? undefined) ?? null,
+        count: members.length,
+        kind: 'project' as const,
+        members,
+        children: [],
+      }
+    })
+}
+
+function sortOrgChildren(node: OrgNode): OrgNode {
+  node.children.sort(compareOrgSiblings)
+  node.children.forEach(sortOrgChildren)
+  return node
+}
+
+function replaceReportsWithProjects(node: OrgNode, depth: number): OrgNode {
+  if (depth >= 2) {
+    node.children = buildProjectNodes(node)
+    return node
+  }
+  node.children.forEach((child) => replaceReportsWithProjects(child, depth + 1))
+  return node
+}
+
+/** Sort IT → IT-related → BPO → Support/HR, and show projects under L2 instead of people. */
+export function prepareOrgTree(root: OrgNode): OrgNode {
+  return replaceReportsWithProjects(sortOrgChildren(root), 0)
 }
 
 export function searchPeople(index: SearchHit[], query: string, limit = 8): SearchHit[] {

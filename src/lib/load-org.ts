@@ -1,4 +1,5 @@
 import { isOrgNode, type OrgNode } from '../types/org'
+import { prepareOrgTree } from './org-tree'
 import { workbookToOrg } from './xlsx-org'
 
 export type LoadedOrgData = {
@@ -35,7 +36,7 @@ export async function loadOrgData(): Promise<LoadedOrgData> {
   }
 
   return {
-    root: payload,
+    root: prepareOrgTree(payload),
     employeeCount: null,
     source: 'sample JSON',
     warnings: workbookProblem ? [`Excel fallback: ${workbookProblem}`] : [],

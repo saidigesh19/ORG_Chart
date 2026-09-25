@@ -25,7 +25,6 @@ export default function App() {
   const [root, setRoot] = useState<OrgNode | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [path, setPath] = useState<OrgPath>([])
-  const [showRollup, setShowRollup] = useState(false)
   const [view, setView] = useState<ViewMode>('chart')
   const [theme, setTheme] = useState<Theme>(() => readTheme())
 
@@ -169,34 +168,25 @@ export default function App() {
               List
             </button>
           </div>
-          <button
-            type="button"
-            className={`chip ${showRollup ? 'is-active' : ''}`}
-            aria-pressed={showRollup}
-            onClick={() => setShowRollup(!showRollup)}
-            title="Show the total number of people under each person"
-          >
-            Totals
-          </button>
           <ThemeToggle theme={theme} onChange={setTheme} />
         </div>
       </header>
 
       <main className="stage">
         {view === 'chart' ? (
-          <OrgChart root={root} selectedPath={path} showRollup={showRollup} onSelect={navigate} />
+          <OrgChart root={root} selectedPath={path} showRollup onSelect={navigate} />
         ) : (
           <>
             <section className="current" aria-live="polite">
               <p className="current-kicker">{path.length === 0 ? 'Group leadership' : 'Current leader'}</p>
-              <PersonIdentity node={current} showRollup={showRollup} size="hero" />
-              {showRollup && rolled > 0 ? (
+              <PersonIdentity node={current} showRollup size="hero" />
+              {rolled > 0 ? (
                 <p className="current-note">
                   This branch covers {formatPeople(rolled)} when descendant counts are included.
                 </p>
               ) : null}
             </section>
-            <ReportsGrid parent={current} parentPath={path} showRollup={showRollup} onOpen={navigate} />
+            <ReportsGrid parent={current} parentPath={path} showRollup onOpen={navigate} />
           </>
         )}
       </main>

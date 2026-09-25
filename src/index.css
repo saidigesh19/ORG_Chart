@@ -445,6 +445,14 @@ p {
   border-radius: 8px;
 }
 
+.identity-dept {
+  margin-bottom: 2px;
+  color: var(--division, var(--accent-dark));
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
 .identity-name {
   font-family: var(--serif);
   font-size: 1.15rem;
@@ -899,6 +907,40 @@ code {
   font-size: 0.72rem;
 }
 
+.project-members {
+  margin: 0;
+  padding: 4px 10px;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--fill);
+}
+
+.project-members li {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 7px 2px;
+}
+
+.project-members li + li {
+  border-top: 1px solid var(--line);
+}
+
+.project-members small {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.project-members-more {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.person-popover .profile-metrics strong {
+  overflow-wrap: anywhere;
+}
+
 .manager-line {
   padding-top: 16px;
   border-top: 1px solid var(--line);
@@ -1262,8 +1304,8 @@ code {
 }
 
 .org-box {
-  width: 168px;
-  height: 118px;
+  width: 188px;
+  height: 112px;
   flex: none;
   padding: 0;
   background: var(--card);
@@ -1317,9 +1359,9 @@ code {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
   min-height: 0;
-  padding: 8px 10px 7px;
+  padding: 8px 11px 8px;
 }
 
 .org-box.is-trail {
@@ -1331,12 +1373,21 @@ code {
   box-shadow: 0 0 0 2px rgba(31, 77, 122, 0.18), var(--shadow);
 }
 
+.org-box-dept,
 .org-box-name,
-.org-box-title,
-.org-box-badge {
+.org-box-title {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.org-box-dept {
+  color: var(--division, var(--accent-dark));
+  font-size: 0.64rem;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: 0.02em;
+  -webkit-line-clamp: 1;
 }
 
 .org-box-name {
@@ -1354,30 +1405,24 @@ code {
   -webkit-line-clamp: 2;
 }
 
-.org-box-badge {
+.org-box-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 8px;
   margin-top: auto;
-  font-size: 0.7rem;
-  color: var(--division, var(--accent-dark));
-  font-weight: 650;
-  -webkit-line-clamp: 1;
+  font-size: 0.68rem;
+  line-height: 1.25;
 }
 
-.org-toggle {
-  display: block;
-  flex: none;
-  height: 24px;
-  margin-top: auto;
-  border-top: 1px solid var(--line);
-  background: var(--fill);
+.org-box-projects {
+  color: var(--division, var(--accent-dark));
+  font-weight: 700;
+}
+
+.org-box-badge {
   color: var(--muted);
-  padding: 0 6px;
-  font-size: 0.68rem;
-  letter-spacing: 0.02em;
-  line-height: 24px;
-  text-align: center;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-weight: 600;
 }
 
 .org-kids {
@@ -1480,8 +1525,8 @@ code {
 }
 
 .chart-scroller.is-compact .org-box {
-  width: 148px;
-  height: 108px;
+  width: 166px;
+  height: 102px;
 }
 
 .chart-scroller.is-compact .org-box-body {
@@ -1499,6 +1544,12 @@ code {
 .chart-scroller.is-compact .org-branch {
   padding-right: 5px;
   padding-left: 5px;
+}
+
+.org-member-dept {
+  color: var(--division, var(--accent-dark));
+  font-size: 0.62rem;
+  font-weight: 700;
 }
 
 .org-member-name {
