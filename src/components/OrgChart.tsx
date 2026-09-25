@@ -230,7 +230,8 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(keysToDepth(root, 1)))
   const [focusPath, setFocusPath] = useState<OrgPath | null>(null)
   const [zoom, setZoom] = useState(100)
-  const [zoomLocked, setZoomLocked] = useState(true)
+  const [zoomLocked, setZoomLocked] = useState(false)
+  const hasFitted = useRef(false)
   const zoomRef = useRef(100)
   const zoomAnchor = useRef<{
     x: number
@@ -551,11 +552,24 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
     const pad = 40
     const scale = Math.min((scroller.clientWidth - pad) / width, (scroller.clientHeight - pad) / height, 1)
     const narrow = scroller.clientWidth < 760
-    const floor = mode === 'auto' && narrow ? 70 : narrow ? 22 : 40
+    const floor = mode === 'auto' && narrow ? 70 : narrow ? 22 : 28
     const next = Math.max(floor, Math.min(100, Math.round(scale * 100)))
     setZoom((current) => (Math.abs(current - next) <= 1 ? current : next))
     setZoomLocked(false)
   }, [])
+
+  useLayoutEffect(() => {
+    if (hasFitted.current) {
+      return
+    }
+    const canvas = canvasRef.current
+    const scroller = scrollerRef.current
+    if (!canvas || !scroller || canvas.scrollWidth < 10) {
+      return
+    }
+    hasFitted.current = true
+    fitToView('strict')
+  }, [fitToView, chartRoot, expanded])
 
   useLayoutEffect(() => {
     const anchor = zoomAnchor.current
