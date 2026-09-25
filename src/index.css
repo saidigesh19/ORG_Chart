@@ -111,6 +111,7 @@ p {
   padding: 8px 20px;
   background: var(--panel);
   border-bottom: 1px solid var(--line);
+  isolation: isolate;
 }
 
 .app-bar-start,
@@ -130,19 +131,20 @@ p {
   flex: none;
   display: flex;
   align-items: center;
-  height: 36px;
+  height: 46px;
   margin: 0;
   overflow: hidden;
 }
 
 .app-logo {
   display: block;
-  height: 86px;
+  height: 76px;
   width: auto;
 }
 
 [data-theme='dark'] .app-logo {
   filter: invert(1) hue-rotate(180deg);
+  mix-blend-mode: screen;
 }
 
 .path-dock {
