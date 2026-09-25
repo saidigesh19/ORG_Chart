@@ -36,6 +36,10 @@ export function pathKey(path: OrgPath): string {
   return path.length === 0 ? 'root' : path.join('.')
 }
 
+export function isPathWithin(path: OrgPath, ancestor: OrgPath): boolean {
+  return ancestor.length <= path.length && ancestor.every((index, position) => path[position] === index)
+}
+
 export function parseHashPath(hash: string): OrgPath | null {
   const raw = hash.replace(/^#/, '').replace(/^\/+/, '')
   if (raw === '') {
@@ -65,6 +69,9 @@ export function toHash(path: OrgPath): string {
  */
 export function rollupHeadcount(node: OrgNode): number {
   const descendantTotal = node.children.reduce((sum, child) => sum + rollupHeadcount(child), 0)
+  if (node.username) {
+    return 1 + descendantTotal
+  }
   if (node.count == null) {
     return descendantTotal
   }
@@ -95,6 +102,17 @@ export function initials(name: string): string {
 export function formatPeople(n: number): string {
   const rounded = Math.round(n)
   return `${rounded.toLocaleString('en-US')} ${rounded === 1 ? 'person' : 'people'}`
+}
+
+export type DivisionTone = 'technology' | 'operations' | 'corporate' | 'leadership' | 'neutral'
+
+export function divisionTone(division?: string | null): DivisionTone {
+  const value = division?.toLowerCase() ?? ''
+  if (value.includes('it') || value.includes('tech')) return 'technology'
+  if (value.includes('bpo') || value.includes('operations')) return 'operations'
+  if (value.includes('support') || value.includes('finance')) return 'corporate'
+  if (value.includes('management') || value.includes('leadership')) return 'leadership'
+  return 'neutral'
 }
 
 export function headcountLabel(node: OrgNode, showRollup: boolean): string | null {

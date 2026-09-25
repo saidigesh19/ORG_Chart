@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { loadOrgData, type LoadedOrgData } from './lib/load-org'
+import { applyTheme, readTheme, type Theme } from './lib/theme'
+import { loadOrgData } from './lib/load-org'
 import {
   flattenSearchIndex,
   formatPeople,
@@ -16,16 +17,21 @@ import { OrgChart } from './components/OrgChart'
 import { PersonIdentity } from './components/PersonIdentity'
 import { ReportsGrid } from './components/ReportsGrid'
 import { SearchBox } from './components/SearchBox'
+import { ThemeToggle } from './components/ThemeToggle'
 
 type ViewMode = 'chart' | 'directory'
 
 export default function App() {
   const [root, setRoot] = useState<OrgNode | null>(null)
-  const [dataset, setDataset] = useState<Omit<LoadedOrgData, 'root'> | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [path, setPath] = useState<OrgPath>([])
   const [showRollup, setShowRollup] = useState(false)
   const [view, setView] = useState<ViewMode>('chart')
+  const [theme, setTheme] = useState<Theme>(() => readTheme())
+
+  useEffect(() => {
+    applyTheme(theme)
+  }, [theme])
 
   useEffect(() => {
     let cancelled = false
@@ -33,11 +39,6 @@ export default function App() {
       .then((data) => {
         if (!cancelled) {
           setRoot(data.root)
-          setDataset({
-            employeeCount: data.employeeCount,
-            source: data.source,
-            warnings: data.warnings,
-          })
         }
       })
       .catch((reason: unknown) => {
@@ -89,7 +90,9 @@ export default function App() {
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
-      if (event.key !== 'Escape') {
+      // The profile popup handles Escape first and marks it, so closing the
+      // popup does not also step up a level.
+      if (event.key !== 'Escape' || event.defaultPrevented) {
         return
       }
       const target = event.target as HTMLElement | null
@@ -134,12 +137,14 @@ export default function App() {
 
   return (
     <div className={`app ${view === 'chart' ? 'app--chart' : ''}`}>
-      <header className="topbar">
-        <div className="brand">
-          <p className="brand-kicker">Meridian Group</p>
-          <h1>Organisation chart</h1>
+      <header className="app-bar">
+        <div className="app-bar-start">
+          <h1 className="app-title">
+            <img className="app-logo" src="/icon1.png" alt="iSpace" />
+          </h1>
         </div>
-        <div className="topbar-tools">
+        <div className="app-bar-end">
+          <SearchBox index={searchIndex} onJump={navigate} />
           <div className="view-switch" role="tablist" aria-label="View">
             <button
               type="button"
@@ -157,50 +162,23 @@ export default function App() {
               className={view === 'directory' ? 'is-active' : undefined}
               onClick={() => setView('directory')}
             >
-              Directory
+              List
             </button>
           </div>
-          <SearchBox index={searchIndex} onJump={navigate} />
-          <label className="toggle">
-            <input
-              type="checkbox"
-              checked={showRollup}
-              onChange={(event) => setShowRollup(event.target.checked)}
-            />
-            <span>Rolled-up headcount</span>
-          </label>
+          <button
+            type="button"
+            className={`chip ${showRollup ? 'is-active' : ''}`}
+            aria-pressed={showRollup}
+            onClick={() => setShowRollup(!showRollup)}
+            title="Show the total number of people under each person"
+          >
+            Totals
+          </button>
+          <ThemeToggle theme={theme} onChange={setTheme} />
         </div>
       </header>
 
-      {dataset ? (
-        <aside className={`data-status ${dataset.warnings.length > 0 ? 'data-status--warning' : ''}`}>
-          <span>
-            Source: <strong>{dataset.source === 'Excel' ? 'org-data.xlsx' : 'org-data.json'}</strong>
-            {dataset.employeeCount !== null ? ` · ${formatPeople(dataset.employeeCount)}` : ''}
-          </span>
-          {dataset.warnings.length > 0 ? (
-            <details>
-              <summary>{dataset.warnings.length} data notice{dataset.warnings.length === 1 ? '' : 's'}</summary>
-              <ul>
-                {dataset.warnings.map((warning) => (
-                  <li key={warning}>{warning}</li>
-                ))}
-              </ul>
-            </details>
-          ) : null}
-        </aside>
-      ) : null}
-
-      <div className="crumb-row">
-        <Breadcrumbs trail={trail} onNavigate={navigate} />
-        {path.length > 0 ? (
-          <button type="button" className="up-link" onClick={() => navigate(parentPath(path))}>
-            Up one level
-          </button>
-        ) : null}
-      </div>
-
-      <main className="shell">
+      <main className="stage">
         {view === 'chart' ? (
           <OrgChart root={root} selectedPath={path} showRollup={showRollup} onSelect={navigate} />
         ) : (
@@ -218,6 +196,21 @@ export default function App() {
           </>
         )}
       </main>
+
+      <div className="path-dock">
+        {path.length > 0 ? (
+          <button
+            type="button"
+            className="up-button"
+            onClick={() => navigate(parentPath(path))}
+            aria-label="Go up one level"
+            title="Go up one level"
+          >
+            ↑
+          </button>
+        ) : null}
+        <Breadcrumbs trail={trail} onNavigate={navigate} />
+      </div>
     </div>
   )
 }

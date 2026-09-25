@@ -1,15 +1,17 @@
 import type { OrgNode } from '../types/org'
-import { headcountLabel, initials } from '../lib/org-tree'
+import { divisionTone, headcountLabel, initials } from '../lib/org-tree'
 
 type PersonIdentityProps = {
   node: OrgNode
   showRollup: boolean
   size?: 'hero' | 'card'
+  details?: boolean
 }
 
-export function PersonIdentity({ node, showRollup, size = 'card' }: PersonIdentityProps) {
+export function PersonIdentity({ node, showRollup, size = 'card', details }: PersonIdentityProps) {
   const badge = headcountLabel(node, showRollup)
-  const details = [
+  const tone = divisionTone(node.division ?? node.section)
+  const fields = [
     ['Employee ID', node.username],
     ['Status', node.status],
     ['Division', node.division],
@@ -21,7 +23,7 @@ export function PersonIdentity({ node, showRollup, size = 'card' }: PersonIdenti
   ].filter((detail): detail is [string, string] => Boolean(detail[1]))
 
   return (
-    <div className={`identity identity--${size}`}>
+    <div className={`identity identity--${size} division-${tone}`}>
       <div className="avatar" aria-hidden="true">
         {initials(node.name)}
       </div>
@@ -29,11 +31,9 @@ export function PersonIdentity({ node, showRollup, size = 'card' }: PersonIdenti
         <p className="identity-name">{node.name}</p>
         <p className="identity-title">{node.designation}</p>
         {badge ? (
-          <p className={`badge ${node.section ? `badge--${node.section.toLowerCase()}` : 'badge--neutral'}`}>
-            {badge}
-          </p>
+          <p className="badge">{badge}</p>
         ) : null}
-        {size === 'hero' && (node.email || details.length > 0) ? (
+        {(details ?? size === 'hero') && (node.email || fields.length > 0) ? (
           <dl className="person-details">
             {node.email ? (
               <div>
@@ -43,7 +43,7 @@ export function PersonIdentity({ node, showRollup, size = 'card' }: PersonIdenti
                 </dd>
               </div>
             ) : null}
-            {details.map(([label, value]) => (
+            {fields.map(([label, value]) => (
               <div key={label}>
                 <dt>{label}</dt>
                 <dd>{value}</dd>
