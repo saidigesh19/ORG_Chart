@@ -1,6 +1,6 @@
 import type { OrgNode } from '../types/org'
-import { rollupHeadcount } from '../lib/org-tree'
-import { PersonIdentity } from './PersonIdentity'
+import { divisionTone, rollupHeadcount } from '../lib/org-tree'
+import { PersonDetails, PersonIdentity } from './PersonIdentity'
 
 type PersonPanelProps = {
   node: OrgNode
@@ -21,26 +21,38 @@ export function PersonPanel({
 }: PersonPanelProps) {
   const totalReports = Math.max(rollupHeadcount(node) - (node.username ? 1 : 0), 0)
   const compact = variant === 'popover'
+  const tone = divisionTone(node.division ?? node.section)
 
   return (
-    <aside className={`person-panel ${compact ? 'person-panel--popover' : ''}`} aria-label={`Profile for ${node.name}`}>
-      <header className="person-panel-head">
-        <div>
-          <p className="eyebrow">{compact ? 'Profile' : 'Selected profile'}</p>
-          {compact ? null : <p className="person-panel-context">Reporting and assignment overview</p>}
-        </div>
-        <div className="person-panel-head-end">
-          <span className="status-indicator">{node.status ?? 'Status not provided'}</span>
-          {onClose ? (
-            <button type="button" className="person-panel-close" onClick={onClose} aria-label="Close profile">
-              ×
-            </button>
-          ) : null}
-        </div>
-      </header>
+    <aside
+      className={`person-panel ${compact ? 'person-panel--popover' : ''} division-${tone}`}
+      aria-label={`Profile for ${node.name}`}
+    >
+      {compact ? (
+        onClose ? (
+          <button type="button" className="person-panel-close" onClick={onClose} aria-label="Close profile">
+            ×
+          </button>
+        ) : null
+      ) : (
+        <header className="person-panel-head">
+          <div>
+            <p className="eyebrow">Selected profile</p>
+            <p className="person-panel-context">Reporting and assignment overview</p>
+          </div>
+          <div className="person-panel-head-end">
+            <span className="status-indicator">{node.status ?? 'Status not provided'}</span>
+            {onClose ? (
+              <button type="button" className="person-panel-close" onClick={onClose} aria-label="Close profile">
+                ×
+              </button>
+            ) : null}
+          </div>
+        </header>
+      )}
 
       <div className="person-panel-body">
-        <PersonIdentity node={node} showRollup={showRollup} size={compact ? 'card' : 'hero'} details />
+        <PersonIdentity node={node} showRollup={showRollup} size={compact ? 'card' : 'hero'} details={!compact} />
 
         <div className="person-panel-side">
           <div className="profile-metrics" aria-label="Reporting summary">
@@ -53,6 +65,8 @@ export function PersonPanel({
               <span>Total reports</span>
             </div>
           </div>
+
+          {compact ? <PersonDetails node={node} /> : null}
 
           {manager ? (
             <div className="manager-line">
