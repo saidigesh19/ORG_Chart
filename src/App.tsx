@@ -79,7 +79,11 @@ export default function App() {
       navigate([])
     }
 
-    applyHash()
+    if (window.location.hash && window.location.hash !== '#/' && window.location.hash !== '#') {
+      window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/`)
+    }
+    setPath([])
+
     window.addEventListener('popstate', applyHash)
     window.addEventListener('hashchange', applyHash)
     return () => {

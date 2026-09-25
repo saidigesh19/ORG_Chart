@@ -241,7 +241,7 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
     zoom: number
   } | null>(null)
   const [compact, setCompact] = useState(() => window.matchMedia('(max-width: 760px)').matches)
-  const [isolate, setIsolate] = useState(true)
+  const [isolate, setIsolate] = useState(false)
   const [dockOpen, setDockOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const [previewPath, setPreviewPath] = useState<OrgPath>([])
@@ -740,21 +740,13 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
             </section>
 
             <section className="dock-block">
-              <p className="dock-title" id={`${zoomId}-label`}>
-                Size
-              </p>
-              <p className="dock-hint">Scroll to move. Ctrl + scroll to zoom</p>
+              <div className="dock-row">
+                <p className="dock-title" id={`${zoomId}-label`}>
+                  Size
+                </p>
+                <span className="dock-zoom-value">{zoom}%</span>
+              </div>
               <div className="dock-zoom" role="group" aria-labelledby={`${zoomId}-label`}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setZoomLocked(true)
-                    setZoom((value) => Math.max(40, value - 10))
-                  }}
-                  aria-label="Make smaller"
-                >
-                  −
-                </button>
                 <input
                   type="range"
                   min={40}
@@ -767,61 +759,52 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
                     setZoom(Number(event.target.value))
                   }}
                 />
-                <button
-                  type="button"
-                  onClick={() => {
-                    setZoomLocked(true)
-                    setZoom((value) => Math.min(130, value + 10))
-                  }}
-                  aria-label="Make larger"
-                >
-                  +
-                </button>
-              </div>
-              <div className="dock-zoom-meta">
-                <span>{zoom}%</span>
                 <button type="button" className="dock-fit" onClick={() => fitToView('strict')}>
-                  Fit to screen
+                  Fit
                 </button>
               </div>
             </section>
 
-            <section className="dock-block dock-toggles">
-              <button
-                type="button"
-                className={`dock-toggle ${isolate ? 'is-active' : ''}`}
-                aria-pressed={isolate}
-                onClick={() => {
-                  setIsolate(!isolate)
-                  if (!isolate) {
-                    setLevelPreset(null)
-                    setExpanded(new Set([...ancestorKeys(selectedPath), pathKey(selectedPath)]))
-                  }
-                }}
-              >
-                <span>This branch only</span>
-                <small>Hide other teams</small>
-              </button>
-              <button
-                type="button"
-                className={`dock-toggle ${compact ? 'is-active' : ''}`}
-                aria-pressed={compact}
-                onClick={() => setCompact(!compact)}
-              >
+            <section className="dock-block dock-switches">
+              <div className="dock-switch">
+                <span>This branch</span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={isolate}
+                  className={isolate ? 'is-on' : undefined}
+                  title="Hide other teams"
+                  onClick={() => {
+                    setIsolate(!isolate)
+                    if (!isolate) {
+                      setLevelPreset(null)
+                      setExpanded(new Set([...ancestorKeys(selectedPath), pathKey(selectedPath)]))
+                    }
+                  }}
+                />
+              </div>
+              <div className="dock-switch">
                 <span>Compact cards</span>
-                <small>Fit more people</small>
-              </button>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={compact}
+                  className={compact ? 'is-on' : undefined}
+                  title="Fit more people"
+                  onClick={() => setCompact(!compact)}
+                />
+              </div>
               {!activeFocusPath && selectedPath.length > 0 ? (
                 <button
                   type="button"
-                  className="dock-toggle"
+                  className="dock-action"
+                  title="Make this person the top"
                   onClick={() => {
                     setFocusPath(selectedPath)
                     setExpanded((current) => new Set(current).add(pathKey(selectedPath)))
                   }}
                 >
-                  <span>Start from here</span>
-                  <small>Make this person the top</small>
+                  Start from here
                 </button>
               ) : null}
             </section>
