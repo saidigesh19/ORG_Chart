@@ -120,7 +120,9 @@ export default function App() {
         <div className="status-panel">
           <h1>Unable to load the organisation chart</h1>
           <p>{error}</p>
-          <p>Place a valid workbook at <code>public/org-data.xlsx</code> and refresh.</p>
+          <p>
+            Place a valid workbook at <code>public/Org Chart Data V2.xlsx</code> and refresh.
+          </p>
         </div>
       </main>
     )

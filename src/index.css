@@ -933,8 +933,22 @@ code {
 }
 
 .project-members-more {
-  color: var(--muted);
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent-dark);
+  font: inherit;
   font-size: 0.75rem;
+  font-weight: 650;
+  text-align: left;
+  cursor: pointer;
+}
+
+.project-members-more:hover {
+  color: var(--accent);
 }
 
 .person-popover .profile-metrics strong {

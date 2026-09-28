@@ -1,6 +1,9 @@
+import { useEffect, useState } from 'react'
 import type { OrgNode } from '../types/org'
 import { divisionTone, hasProjectChildren, isProjectNode, rollupHeadcount } from '../lib/org-tree'
 import { PersonDetails, PersonIdentity } from './PersonIdentity'
+
+const MEMBER_PREVIEW = 10
 
 type PersonPanelProps = {
   node: OrgNode
@@ -19,11 +22,20 @@ export function PersonPanel({
   onOpenManager,
   onClose,
 }: PersonPanelProps) {
-  const totalReports = Math.max(rollupHeadcount(node) - (node.username ? 1 : 0), 0)
+  const totalReports = Math.max(rollupHeadcount(node) - (isProjectNode(node) ? 0 : 1), 0)
   const compact = variant === 'popover'
   const tone = divisionTone(node.division ?? node.section)
   const project = isProjectNode(node)
-  const peopleOnProject = node.members?.length ?? node.count ?? 0
+  const members = node.members ?? []
+  const peopleOnProject = members.length || (node.count ?? 0)
+  const [showAllMembers, setShowAllMembers] = useState(false)
+
+  useEffect(() => {
+    setShowAllMembers(false)
+  }, [node.name, node.username])
+
+  const visibleMembers = showAllMembers ? members : members.slice(0, MEMBER_PREVIEW)
+  const hiddenCount = members.length - MEMBER_PREVIEW
 
   return (
     <aside
@@ -85,16 +97,25 @@ export function PersonPanel({
 
           {compact ? <PersonDetails node={node} /> : null}
 
-          {project && node.members && node.members.length > 0 ? (
+          {project && members.length > 0 ? (
             <ul className="project-members">
-              {node.members.slice(0, 10).map((member) => (
+              {visibleMembers.map((member) => (
                 <li key={member.username ?? member.name}>
                   <strong>{member.name}</strong>
                   <small>{member.designation}</small>
                 </li>
               ))}
-              {node.members.length > 10 ? (
-                <li className="project-members-more">+{node.members.length - 10} more</li>
+              {hiddenCount > 0 && !showAllMembers ? (
+                <li>
+                  <button
+                    type="button"
+                    className="project-members-more"
+                    aria-expanded={false}
+                    onClick={() => setShowAllMembers(true)}
+                  >
+                    +{hiddenCount} more
+                  </button>
+                </li>
               ) : null}
             </ul>
           ) : null}

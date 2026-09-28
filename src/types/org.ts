@@ -15,6 +15,9 @@ export type OrgNode = {
   projectName?: string
   lastWorkingDay?: string
   tsm?: string
+  employmentType?: string
+  dateOfJoining?: string
+  l2Manager?: string
   section: string | null
   count: number | null
   kind?: 'person' | 'project'

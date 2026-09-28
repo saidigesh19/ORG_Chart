@@ -19,6 +19,8 @@ function detailFields(node: OrgNode): Array<[string, string]> {
           ['Category', node.departmentCategory],
           ['Project', node.projectName],
           ['TSM', node.tsm],
+          ['Type', node.employmentType],
+          ['Joined', node.dateOfJoining],
           ['Last day', node.lastWorkingDay],
         ]
 
@@ -63,8 +65,8 @@ export function PersonIdentity({ node, showRollup, size = 'card', details }: Per
           {initials(node.name)}
         </div>
         <div className="identity-copy">
-          {node.division ?? node.section ? (
-            <p className="identity-dept">{node.division ?? node.section}</p>
+          {node.departmentCategory ?? node.division ?? node.section ? (
+            <p className="identity-dept">{node.departmentCategory ?? node.division ?? node.section}</p>
           ) : null}
           <p className="identity-name">{node.name}</p>
           <p className="identity-title">{node.designation}</p>

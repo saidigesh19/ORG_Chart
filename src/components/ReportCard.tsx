@@ -34,7 +34,7 @@ export function ReportCard({ node, showRollup, onOpen }: ReportCardProps) {
       tabIndex={0}
       onClick={onOpen}
       onKeyDown={onKeyDown}
-      aria-label={`${node.division ?? node.section ? `${node.division ?? node.section}, ` : ''}${node.name}, ${node.designation}. ${hint}`}
+      aria-label={`${node.departmentCategory ?? node.division ?? node.section ? `${node.departmentCategory ?? node.division ?? node.section}, ` : ''}${node.name}, ${node.designation}. ${hint}`}
     >
       <PersonIdentity node={node} showRollup={showRollup} />
       <div className="card-meta">

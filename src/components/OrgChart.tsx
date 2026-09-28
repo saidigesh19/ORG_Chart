@@ -19,6 +19,7 @@ import {
   isPathWithin,
   isProjectNode,
   keysToDepth,
+  leadershipOffset,
   parentPath,
   pathKey,
 } from '../lib/org-tree'
@@ -67,9 +68,9 @@ function deepestVisiblePath(path: OrgPath, expanded: Set<string>): OrgPath {
 }
 
 const LEVEL_OPTIONS: { label: string; depth: number | 'all'; hint: string }[] = [
-  { label: 'Top', depth: 0, hint: 'Only the person at the top' },
-  { label: 'L1', depth: 1, hint: 'Top person and their direct reports' },
-  { label: 'L2', depth: 2, hint: 'Two reporting levels, then projects under L2' },
+  { label: 'Top', depth: 0, hint: 'CEO and the operating lead' },
+  { label: 'L1', depth: 1, hint: 'The same L1 leaders as before' },
+  { label: 'L2', depth: 2, hint: 'The same L2 leaders, then projects under them' },
 ]
 
 function findCard(scroller: HTMLElement | null, path: OrgPath): HTMLElement | null {
@@ -141,8 +142,8 @@ function ChartBox({
         onKeyDown={onKeyDown}
       >
         <span className="org-box-body">
-          {node.division ?? node.section ? (
-            <span className="org-box-dept">{node.division ?? node.section}</span>
+          {node.departmentCategory ?? node.division ?? node.section ? (
+            <span className="org-box-dept">{node.departmentCategory ?? node.division ?? node.section}</span>
           ) : null}
           <span className="org-box-name">{node.name}</span>
           <span className="org-box-title">{node.designation}</span>
@@ -192,7 +193,9 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
   const canvasRef = useRef<HTMLDivElement>(null)
   const popoverRef = useRef<HTMLDivElement>(null)
   const dockRef = useRef<HTMLElement>(null)
-  const [expanded, setExpanded] = useState<Set<string>>(() => new Set(keysToDepth(root, 1)))
+  const [expanded, setExpanded] = useState<Set<string>>(
+    () => new Set(keysToDepth(root, leadershipOffset(root) + 1)),
+  )
   const [focusPath, setFocusPath] = useState<OrgPath | null>(null)
   const [zoom, setZoom] = useState(100)
   const [zoomLocked, setZoomLocked] = useState(false)
@@ -208,12 +211,14 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
   const [compact, setCompact] = useState(() => window.matchMedia('(max-width: 760px)').matches)
   const [isolate, setIsolate] = useState(false)
   const [dockOpen, setDockOpen] = useState(false)
+  const [showPopup, setShowPopup] = useState(true)
   const [profileOpen, setProfileOpen] = useState(false)
   const [previewPath, setPreviewPath] = useState<OrgPath>([])
   const [profileAt, setProfileAt] = useState<{ top: number; left: number } | null>(null)
   const openTimer = useRef<number | null>(null)
   const closeTimer = useRef<number | null>(null)
   const profileOpenRef = useRef(false)
+  const showPopupRef = useRef(true)
   const skipRevealRef = useRef(false)
   const [levelPreset, setLevelPreset] = useState<number | 'all' | null>(1)
   const [exporting, setExporting] = useState<'image' | 'pdf' | null>(null)
@@ -320,6 +325,9 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
   }
 
   function schedulePreview(path: OrgPath) {
+    if (!showPopupRef.current) {
+      return
+    }
     clearHoverTimers()
     if (profileOpenRef.current) {
       showPreview(path)
@@ -327,6 +335,14 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
     }
     openTimer.current = window.setTimeout(() => showPreview(path), HOVER_OPEN_MS)
   }
+
+  useEffect(() => {
+    showPopupRef.current = showPopup
+    if (!showPopup) {
+      clearHoverTimers()
+      hidePreview()
+    }
+  }, [showPopup])
 
   function scheduleHide() {
     if (openTimer.current !== null) {
@@ -495,7 +511,7 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
         toggle(path)
       }
       setLevelPreset(null)
-      if (window.matchMedia('(hover: hover)').matches) {
+      if (!showPopupRef.current || window.matchMedia('(hover: hover)').matches) {
         return
       }
       setPreviewPath(path)
@@ -602,8 +618,9 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
       setExpanded(new Set(expandableKeys(chartRoot, chartRootPath)))
       return
     }
-    setExpanded(new Set(keysToDepth(chartRoot, chartRootPath.length + depth, chartRootPath)))
-    const clipped = selectedPath.slice(0, depth)
+    const offset = chartRootPath.length === 0 ? leadershipOffset(chartRoot) : 0
+    setExpanded(new Set(keysToDepth(chartRoot, chartRootPath.length + offset + depth, chartRootPath)))
+    const clipped = selectedPath.slice(0, offset + depth)
     setRevealedKey(pathKey(clipped))
     if (pathKey(clipped) !== pathKey(selectedPath)) {
       onSelect(clipped)
@@ -667,7 +684,7 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
         the manager, down to the first report, left and right between peers.
       </p>
 
-      {profileOpen && previewNode && profileAt ? (
+      {showPopup && profileOpen && previewNode && profileAt ? (
         <div
           className="person-popover"
           ref={popoverRef}
@@ -778,6 +795,17 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
                   className={compact ? 'is-on' : undefined}
                   title="Fit more people"
                   onClick={() => setCompact(!compact)}
+                />
+              </div>
+              <div className="dock-switch">
+                <span>Pop-up</span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={showPopup}
+                  className={showPopup ? 'is-on' : undefined}
+                  title="Show the profile pop-up on hover"
+                  onClick={() => setShowPopup(!showPopup)}
                 />
               </div>
               {!activeFocusPath && selectedPath.length > 0 ? (

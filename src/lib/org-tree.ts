@@ -213,6 +213,74 @@ export function compareOrgSiblings(a: OrgNode, b: OrgNode): number {
   return orgGroupRank(a) - orgGroupRank(b) || a.name.localeCompare(b.name)
 }
 
+export type PivotProject = {
+  name: string
+  count: number
+}
+
+export type PivotByPerson = Map<string, PivotProject[]>
+
+function nameTokens(value: string): string[] {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+}
+
+function levenshtein(a: string, b: string): number {
+  if (a === b) {
+    return 0
+  }
+  const previous = Array.from({ length: a.length + 1 }, (_, index) => index)
+  for (let j = 1; j <= b.length; j += 1) {
+    let last = previous[0]
+    previous[0] = j
+    for (let i = 1; i <= a.length; i += 1) {
+      const next = previous[i]
+      previous[i] = a[i - 1] === b[j - 1] ? last : 1 + Math.min(last, previous[i], previous[i - 1])
+      last = next
+    }
+  }
+  return previous[a.length]
+}
+
+export function namesLikelyMatch(a: string, b: string): boolean {
+  const left = a.trim().toLowerCase()
+  const right = b.trim().toLowerCase()
+  if (left === right) {
+    return true
+  }
+  const leftTokens = nameTokens(a)
+  const rightTokens = nameTokens(b)
+  if (leftTokens.length === 0 || rightTokens.length === 0) {
+    return false
+  }
+  if (leftTokens.length === rightTokens.length) {
+    return leftTokens.every((token, index) => {
+      const other = rightTokens[index]
+      return token === other || token.startsWith(other) || other.startsWith(token) || levenshtein(token, other) <= 2
+    })
+  }
+  return levenshtein(leftTokens.join(''), rightTokens.join('')) <= 2
+}
+
+export function pivotProjectsFor(pivot: PivotByPerson | undefined, name: string): PivotProject[] {
+  if (!pivot) {
+    return []
+  }
+  const exact = pivot.get(name)
+  if (exact) {
+    return exact
+  }
+  for (const [key, projects] of pivot) {
+    if (namesLikelyMatch(key, name)) {
+      return projects
+    }
+  }
+  return []
+}
+
 function majorityField(nodes: OrgNode[], pick: (node: OrgNode) => string | undefined): string | undefined {
   const counts = new Map<string, number>()
   for (const node of nodes) {
@@ -258,7 +326,7 @@ function slimPerson(node: OrgNode): OrgNode {
   return { ...node, children: [], members: undefined }
 }
 
-function buildProjectNodes(manager: OrgNode): OrgNode[] {
+function buildProjectNodes(manager: OrgNode, pivot?: PivotByPerson): OrgNode[] {
   const groups = new Map<string, OrgNode[]>()
   collectDescendants(manager).forEach((person) => {
     const project = normalizeProjectName(person.projectName)
@@ -267,20 +335,32 @@ function buildProjectNodes(manager: OrgNode): OrgNode[] {
     groups.set(project, members)
   })
 
+  pivotProjectsFor(pivot, manager.name).forEach((entry) => {
+    const project = normalizeProjectName(entry.name)
+    if (!groups.has(project)) {
+      groups.set(project, [])
+    }
+  })
+
+  const pivotCount = new Map(
+    pivotProjectsFor(pivot, manager.name).map((entry) => [normalizeProjectName(entry.name), entry.count]),
+  )
+
   return Array.from(groups.entries())
     .sort((a, b) => a[0].localeCompare(b[0]))
     .map(([name, members]) => {
-      const division = majorityField(members, (member) => member.division)
+      const count = pivotCount.get(name) ?? members.length
+      const division = majorityField(members, (member) => member.division) ?? manager.division
       const department = majorityField(members, (member) => member.department)
       return {
         name,
-        designation: members.length === 1 ? '1 person' : `${members.length} people`,
+        designation: count === 1 ? '1 person' : `${count} people`,
         division,
         department,
         departmentCategory: majorityField(members, (member) => member.departmentCategory),
         projectName: name === 'Unassigned' ? undefined : name,
-        section: division ?? majorityField(members, (member) => member.section ?? undefined) ?? null,
-        count: members.length,
+        section: division ?? majorityField(members, (member) => member.section ?? undefined) ?? manager.section ?? null,
+        count,
         kind: 'project' as const,
         members,
         children: [],
@@ -294,18 +374,35 @@ function sortOrgChildren(node: OrgNode): OrgNode {
   return node
 }
 
-function replaceReportsWithProjects(node: OrgNode, depth: number): OrgNode {
-  if (depth >= 2) {
-    node.children = buildProjectNodes(node)
+function replaceReportsWithProjects(
+  node: OrgNode,
+  depth: number,
+  pivot?: PivotByPerson,
+  projectFromDepth = 2,
+): OrgNode {
+  if (depth >= projectFromDepth) {
+    node.children = buildProjectNodes(node, pivot)
     return node
   }
-  node.children.forEach((child) => replaceReportsWithProjects(child, depth + 1))
+  node.children.forEach((child) => replaceReportsWithProjects(child, depth + 1, pivot, projectFromDepth))
   return node
 }
 
+export function leadershipOffset(root: OrgNode): number {
+  return /^ceo$/i.test(root.designation) && root.children.length === 1 ? 1 : 0
+}
+
 /** Sort IT → IT-related → BPO → Support/HR, and show projects under L2 instead of people. */
-export function prepareOrgTree(root: OrgNode): OrgNode {
-  return replaceReportsWithProjects(sortOrgChildren(root), 0)
+export function prepareOrgTree(
+  root: OrgNode,
+  pivot?: PivotByPerson,
+  preserveChildOrder = false,
+  projectFromDepth = 2,
+): OrgNode {
+  if (!preserveChildOrder) {
+    sortOrgChildren(root)
+  }
+  return replaceReportsWithProjects(root, 0, pivot, projectFromDepth)
 }
 
 export function searchPeople(index: SearchHit[], query: string, limit = 8): SearchHit[] {
@@ -326,6 +423,7 @@ export function searchPeople(index: SearchHit[], query: string, limit = 8): Sear
         hit.node.departmentCategory,
         hit.node.projectName,
         hit.node.tsm,
+        hit.node.employmentType,
       ]
         .filter(Boolean)
         .join(' ')
