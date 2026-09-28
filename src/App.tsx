@@ -9,6 +9,7 @@ import {
   parentPath,
   parseHashPath,
   hasProjectChildren,
+  leadershipOffset,
   rollupHeadcount,
   toHash,
 } from './lib/org-tree'
@@ -141,6 +142,8 @@ export default function App() {
   }
 
   const rolled = rollupHeadcount(current)
+  const level1Depth = leadershipOffset(root) + 1
+  const currentIsLevel1 = path.length === level1Depth
 
   return (
     <div className={`app ${view === 'chart' ? 'app--chart' : ''}`}>
@@ -184,7 +187,12 @@ export default function App() {
           <>
             <section className="current" aria-live="polite">
               <p className="current-kicker">{path.length === 0 ? 'Group leadership' : 'Current leader'}</p>
-              <PersonIdentity node={current} showRollup size="hero" />
+              <PersonIdentity
+                node={current}
+                showRollup
+                countScope={currentIsLevel1 ? 'direct' : 'rollup'}
+                size="hero"
+              />
               {rolled > 0 ? (
                 <p className="current-note">
                   This branch covers {formatPeople(rolled)} when descendant counts are included.
@@ -197,7 +205,13 @@ export default function App() {
                 </section>
               ) : null}
             </section>
-            <ReportsGrid parent={current} parentPath={path} showRollup onOpen={navigate} />
+            <ReportsGrid
+              parent={current}
+              parentPath={path}
+              showRollup
+              countScope={path.length === level1Depth - 1 ? 'direct' : 'rollup'}
+              onOpen={navigate}
+            />
           </>
         )}
       </main>

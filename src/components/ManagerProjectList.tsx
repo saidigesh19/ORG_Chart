@@ -4,6 +4,8 @@ import { projectMemberCount } from '../lib/org-tree'
 
 type ManagerProjectListProps = {
   projects: OrgNode[]
+  /** Child indexes in the parent node, when projects are not a 0-based prefix. */
+  indexes?: number[]
   variant?: 'chart' | 'card'
   selectedIndex?: number | null
   onSelectProject?: (index: number) => void
@@ -11,6 +13,7 @@ type ManagerProjectListProps = {
 
 export function ManagerProjectList({
   projects,
+  indexes,
   variant = 'card',
   selectedIndex = null,
   onSelectProject,
@@ -30,8 +33,9 @@ export function ManagerProjectList({
   return (
     <ul className={`manager-project-list manager-project-list--${variant}`}>
       {projects.map((project, index) => {
+        const sourceIndex = indexes?.[index] ?? index
         const interactive = Boolean(onSelectProject)
-        const selected = selectedIndex === index
+        const selected = selectedIndex === sourceIndex
         const label = `${project.name} (${projectMemberCount(project)})`
 
         if (interactive) {
@@ -40,7 +44,7 @@ export function ManagerProjectList({
               <button
                 type="button"
                 className={selected ? 'is-selected' : undefined}
-                onClick={(event) => onItemClick(event, index)}
+                onClick={(event) => onItemClick(event, sourceIndex)}
                 title={label}
               >
                 <span className="manager-project-list-name">{project.name}</span>

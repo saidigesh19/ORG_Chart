@@ -128,6 +128,20 @@ export function headcountLabel(node: OrgNode, showRollup: boolean): string | nul
   return `${formatPeople(rolled)} total`
 }
 
+/** People who report directly to this person, excluding project groups. */
+export function directReportCount(node: OrgNode): number {
+  return node.children.filter((child) => child.kind !== 'project').length
+}
+
+export function directReportLabel(node: OrgNode): string | null {
+  const count = directReportCount(node)
+  if (count <= 0) {
+    return null
+  }
+
+  return `${count.toLocaleString('en-US')} direct ${count === 1 ? 'report' : 'reports'}`
+}
+
 export function expandableKeys(node: OrgNode, path: OrgPath = [], keys: string[] = []): string[] {
   if (node.children.length > 0) {
     keys.push(pathKey(path))
@@ -138,7 +152,12 @@ export function expandableKeys(node: OrgNode, path: OrgPath = [], keys: string[]
 
 export function keysToDepth(node: OrgNode, maxDepth: number, path: OrgPath = [], keys: string[] = []): string[] {
   if (path.length < maxDepth && node.children.length > 0) {
-    keys.push(pathKey(path))
+    // A side leader is level 1, one step higher than the L1 row, so the L1 view
+    // leaves their level-2 managers closed until that leader is opened.
+    const sideClosed = node.layout === 'side' && path.length + 1 >= maxDepth
+    if (!sideClosed) {
+      keys.push(pathKey(path))
+    }
     node.children.forEach((child, index) => keysToDepth(child, maxDepth, [...path, index], keys))
   }
   return keys
@@ -337,7 +356,7 @@ function slimPerson(node: OrgNode): OrgNode {
   return { ...node, children: [], members: undefined }
 }
 
-function buildProjectNodes(manager: OrgNode, pivot?: PivotByPerson): OrgNode[] {
+export function buildProjectNodes(manager: OrgNode, pivot?: PivotByPerson): OrgNode[] {
   const groups = new Map<string, OrgNode[]>()
   collectDescendants(manager).forEach((person) => {
     const project = normalizeProjectName(person.projectName)
@@ -395,12 +414,31 @@ function replaceReportsWithProjects(
     node.children = buildProjectNodes(node, pivot)
     return node
   }
-  node.children.forEach((child) => replaceReportsWithProjects(child, depth + 1, pivot, projectFromDepth))
+  node.children.forEach((child) => {
+    // A side leader is a level-1 card, so their reports are level 2 and keep projects on the card.
+    const nextDepth = child.layout === 'side' ? Math.max(depth + 1, projectFromDepth - 1) : depth + 1
+    replaceReportsWithProjects(child, nextDepth, pivot, projectFromDepth)
+  })
   return node
 }
 
+/** How many single-person steps sit above the first leader who has several reports. Side cards are not part of that line. */
 export function leadershipOffset(root: OrgNode): number {
-  return /^ceo$/i.test(root.designation) && root.children.length === 1 ? 1 : 0
+  if (!/^ceo$/i.test(root.designation)) {
+    return 0
+  }
+
+  let depth = 0
+  let current = root
+  while (depth < 6) {
+    const people = current.children.filter((child) => child.kind !== 'project' && child.layout !== 'side')
+    if (people.length !== 1) {
+      break
+    }
+    current = people[0]
+    depth += 1
+  }
+  return depth
 }
 
 /** Sort IT → IT-related → BPO → Support/HR, and show projects under L2 instead of people. */

@@ -3,18 +3,20 @@ import {
   useEffect,
   useId,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
 } from 'react'
+import { flushSync } from 'react-dom'
 import type { OrgNode, OrgPath } from '../types/org'
 import {
   ancestorKeys,
+  directReportLabel,
   divisionTone,
   expandableKeys,
   getNodeAtPath,
-  hasProjectChildren,
   headcountLabel,
   isPathWithin,
   isProjectNode,
@@ -23,7 +25,15 @@ import {
   parentPath,
   pathKey,
 } from '../lib/org-tree'
-import { downloadChartImage, downloadChartPdf } from '../lib/export-chart'
+import {
+  captureChartCanvas,
+  downloadChartImage,
+  downloadChartPdf,
+  placeChartOnPaper,
+  type ChartExportSetup,
+  type PageDepth,
+} from '../lib/export-chart'
+import { ExportDialog } from './ExportDialog'
 import { ManagerProjectList } from './ManagerProjectList'
 import { PersonPanel } from './PersonPanel'
 
@@ -41,14 +51,20 @@ type ChartBoxProps = {
   expanded: Set<string>
   showRollup: boolean
   onSelect: (path: OrgPath) => void
-  siblingCount: number
+  siblingIndexes: number[]
   isolate: boolean
+  /** Path of the node whose children are the choosable branches. */
+  branchParentPath: OrgPath
+  /** null shows every branch. Otherwise only these branch path keys stay. */
+  branchKeys: Set<string> | null
   /**
    * Path length of the node whose direct children should be arranged as a
    * rectangular grid instead of a horizontal row. Used to lay out L2 leaders
    * (the children of each L1) in a wrapping rectangle.
    */
   gridDepth: number
+  /** Path length of a level 1 leader, measured from the organisation root. */
+  level1Depth: number
 }
 
 /**
@@ -107,33 +123,63 @@ function ChartBox({
   expanded,
   showRollup,
   onSelect,
-  siblingCount,
+  siblingIndexes,
   isolate,
+  branchParentPath,
+  branchKeys,
   gridDepth,
+  level1Depth,
 }: ChartBoxProps) {
   const key = pathKey(path)
   const selected = key === pathKey(selectedPath)
   const onTrail = path.length <= selectedPath.length && path.every((index, i) => selectedPath[i] === index)
-  const inlineProjects = hasProjectChildren(node)
-  const projectCount = inlineProjects ? node.children.length : 0
-  const hasChildren = node.children.length > 0 && !inlineProjects
+  const indexedChildren = node.children.map((child, index) => ({ child, index }))
+  const projectEntries = indexedChildren.filter(({ child }) => isProjectNode(child))
+  const personEntries = indexedChildren.filter(({ child }) => !isProjectNode(child))
+  const sideEntries = personEntries.filter(({ child, index }) => {
+    if (child.layout !== 'side') {
+      return false
+    }
+    return !branchKeys || branchKeys.has(pathKey([...path, index]))
+  })
+  const spineEntries = personEntries.filter(({ child }) => child.layout !== 'side')
+  const inlineProjects = projectEntries.length > 0
+  const projectCount = projectEntries.length
+  const hasChildren = spineEntries.length > 0
   const isOpen = hasChildren && expanded.has(key)
-  const badge = headcountLabel(node, showRollup)
+  const isLevel1 = path.length === level1Depth
+  const badge = isLevel1 ? directReportLabel(node) : headcountLabel(node, showRollup)
   const tone = isProjectNode(node) ? 'project' : divisionTone(node.division ?? node.section)
   const selectedProjectIndex =
-    inlineProjects &&
+    projectEntries.length > 0 &&
     selectedPath.length === path.length + 1 &&
     isPathWithin(selectedPath, path)
       ? selectedPath[path.length]
       : null
 
-  // While a branch is isolated, an ancestor of the selection shows only the
-  // child that leads to it, so peer branches do not crowd the view.
-  const leadsToSelection = isolate && path.length < selectedPath.length && isPathWithin(selectedPath, path)
-  const shownChildren = node.children
-    .map((child, index) => ({ child, index }))
-    .filter(({ index }) => !leadsToSelection || index === selectedPath[path.length])
-  const hiddenPeers = node.children.length - shownChildren.length
+  // A branch filter keeps the chosen teams. "This branch" still narrows the
+  // selected line, but other chosen branches stay on the chart.
+  const atBranchRow =
+    path.length === branchParentPath.length && isPathWithin(path, branchParentPath)
+  const shownChildren = spineEntries.filter(({ index }) => {
+      if (branchKeys) {
+        if (path.length < branchParentPath.length) {
+          if (index !== branchParentPath[path.length]) return false
+        } else if (atBranchRow && !branchKeys.has(pathKey([...path, index]))) {
+          return false
+        }
+      }
+      const leadsToSelection =
+        isolate && path.length < selectedPath.length && isPathWithin(selectedPath, path)
+      if (leadsToSelection && !(branchKeys && atBranchRow) && index !== selectedPath[path.length]) {
+        return false
+      }
+      return true
+    })
+  const hiddenPeers = spineEntries.length - shownChildren.length
+  const peerIndexes = [...sideEntries, ...shownChildren]
+    .sort((left, right) => left.index - right.index)
+    .map(({ index }) => index)
   // Arrange this node's children as a rectangular grid when they are the L2
   // layer. A single leftover child (e.g. while isolating a branch) falls back
   // to the standard column so the rectangle does not look like a stray box.
@@ -144,12 +190,15 @@ function ChartBox({
     const index = path[path.length - 1] ?? 0
     let destination: OrgPath | null = null
     if (event.key === 'ArrowUp' && path.length > 0) destination = parentPath(path)
-    if (event.key === 'ArrowDown' && hasChildren) destination = [...path, 0]
-    if (event.key === 'ArrowLeft' && path.length > 0 && index > 0) {
-      destination = [...path.slice(0, -1), index - 1]
+    const shownPosition = siblingIndexes.indexOf(index)
+    if (event.key === 'ArrowDown' && hasChildren && shownChildren.length > 0) {
+      destination = [...path, shownChildren[0].index]
     }
-    if (event.key === 'ArrowRight' && path.length > 0 && index < siblingCount - 1) {
-      destination = [...path.slice(0, -1), index + 1]
+    if (event.key === 'ArrowLeft' && shownPosition > 0) {
+      destination = [...path.slice(0, -1), siblingIndexes[shownPosition - 1]]
+    }
+    if (event.key === 'ArrowRight' && shownPosition >= 0 && shownPosition < siblingIndexes.length - 1) {
+      destination = [...path.slice(0, -1), siblingIndexes[shownPosition + 1]]
     }
     if (destination) {
       event.preventDefault()
@@ -186,7 +235,8 @@ function ChartBox({
                 {badge ? <span className="org-box-badge">{badge}</span> : null}
               </span>
               <ManagerProjectList
-                projects={node.children}
+                projects={projectEntries.map(({ child }) => child)}
+                indexes={projectEntries.map(({ index }) => index)}
                 variant="chart"
                 selectedIndex={selectedProjectIndex}
                 onSelectProject={(index) => onSelect([...path, index])}
@@ -199,6 +249,26 @@ function ChartBox({
           ) : null}
         </span>
       </button>
+
+      {sideEntries.map(({ child, index }) => (
+        <div className="org-side" key={pathKey([...path, index])}>
+          <span className="org-side-link" aria-hidden="true" />
+          <ChartBox
+            node={child}
+            path={[...path, index]}
+            selectedPath={selectedPath}
+            expanded={expanded}
+            showRollup={showRollup}
+            onSelect={onSelect}
+            siblingIndexes={peerIndexes}
+            isolate={isolate}
+            branchParentPath={branchParentPath}
+            branchKeys={branchKeys}
+            gridDepth={path.length + 1}
+            level1Depth={path.length + 1}
+          />
+        </div>
+      ))}
 
       {isOpen && hiddenPeers > 0 ? (
         <p className="org-hidden-note">
@@ -221,9 +291,12 @@ function ChartBox({
                 expanded={expanded}
                 showRollup={showRollup}
                 onSelect={onSelect}
-                siblingCount={node.children.length}
+                siblingIndexes={sideEntries.length > 0 ? peerIndexes : shownChildren.map(({ index: childIndex }) => childIndex)}
                 isolate={isolate}
+                branchParentPath={branchParentPath}
+                branchKeys={branchKeys}
                 gridDepth={gridDepth}
+                level1Depth={level1Depth}
               />
             </div>
           ))}
@@ -255,6 +328,7 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
   } | null>(null)
   const [compact, setCompact] = useState(() => window.matchMedia('(max-width: 760px)').matches)
   const [isolate, setIsolate] = useState(false)
+  const [branchKeys, setBranchKeys] = useState<Set<string> | null>(null)
   const [dockOpen, setDockOpen] = useState(false)
   const [showPopup, setShowPopup] = useState(true)
   const [profileOpen, setProfileOpen] = useState(false)
@@ -265,10 +339,16 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
   const profileOpenRef = useRef(false)
   const showPopupRef = useRef(true)
   const skipRevealRef = useRef(false)
+  const exportDialogRef = useRef(false)
+  const exportingRef = useRef(false)
   const [levelPreset, setLevelPreset] = useState<number | 'all' | null>(1)
   const [exporting, setExporting] = useState<'image' | 'pdf' | null>(null)
+  const [exportKind, setExportKind] = useState<'image' | 'pdf' | null>(null)
+  const [exportNote, setExportNote] = useState<string | null>(null)
+  exportDialogRef.current = exportKind !== null
   const levelsId = useId()
   const zoomId = useId()
+  const branchesId = useId()
   const dockPanelId = useId()
 
   const activeFocusPath = focusPath && isPathWithin(selectedPath, focusPath) ? focusPath : null
@@ -280,6 +360,17 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
   // focus, matching how the L1/L2 dock buttons compute their depths.
   const l1PathLength =
     chartRootPath.length + (chartRootPath.length === 0 ? leadershipOffset(chartRoot) : 0) + 1
+  const level1Depth = leadershipOffset(root) + 1
+  const chartRootKey = pathKey(chartRootPath)
+  const branches = useMemo(
+    () => listChartBranches(chartRoot, pathFromKey(chartRootKey)),
+    [chartRoot, chartRootKey],
+  )
+  const teamBranches = branches.filter((branch) => branch.node.layout !== 'side')
+  const branchParentPath = (teamBranches[0] ?? branches[0])
+    ? (teamBranches[0] ?? branches[0]).path.slice(0, -1)
+    : chartRootPath
+  const branchFilterKey = branchKeys ? [...branchKeys].sort().join('|') : ''
 
   // Reveal a newly selected person and their team once, rather than forcing
   // ancestors open on every render, which would defeat the collapse controls.
@@ -318,13 +409,17 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
     }
 
     function onPointerDown(event: PointerEvent) {
-      if (!dockRef.current?.contains(event.target as Node)) {
+      const target = event.target
+      if (target instanceof Element && target.closest('.export-dialog-backdrop')) {
+        return
+      }
+      if (!dockRef.current?.contains(target as Node)) {
         setDockOpen(false)
       }
     }
 
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape' && !profileOpen) {
+      if (event.key === 'Escape' && !profileOpen && !exportDialogRef.current) {
         setDockOpen(false)
       }
     }
@@ -344,7 +439,7 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
   }, [selectedPath, expanded])
 
   useEffect(() => {
-    if (isolate) {
+    if (isolate || exportingRef.current) {
       return
     }
     const visible = deepestVisiblePath(selectedPath, expanded)
@@ -352,6 +447,27 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
       onSelect(visible)
     }
   }, [expanded, isolate, selectedPath, onSelect])
+
+  // If the open person sits in a branch that was switched off, move to one
+  // that is still on the chart.
+  useEffect(() => {
+    if (!branchKeys || exportingRef.current) {
+      return
+    }
+    const catalog = listChartBranches(chartRoot, pathFromKey(chartRootKey))
+    const branchDepth = catalog[0]?.path.length ?? 0
+    if (selectedPath.length < branchDepth) {
+      return
+    }
+    const match = catalog.find((branch) => isPathWithin(selectedPath, branch.path))
+    if (match && branchKeys.has(pathKey(match.path))) {
+      return
+    }
+    const fallback = catalog.find((branch) => branchKeys.has(pathKey(branch.path)))
+    if (fallback && pathKey(fallback.path) !== pathKey(selectedPath)) {
+      onSelect(fallback.path)
+    }
+  }, [branchKeys, selectedPath, chartRoot, chartRootKey, onSelect])
 
   function clearHoverTimers() {
     if (openTimer.current !== null) {
@@ -591,6 +707,17 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
     setZoomLocked(false)
   }, [])
 
+  // An open side team hangs beside the level-1 row. Drop that row below it.
+  useLayoutEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) {
+      return
+    }
+    const sideTeam = canvas.querySelector<HTMLElement>('.org-side .org-kids')
+    const space = sideTeam ? sideTeam.offsetHeight + 12 : 0
+    canvas.style.setProperty('--side-report-space', `${space}px`)
+  }, [chartRoot, expanded, compact, isolate, selectedPath, branchFilterKey, zoom])
+
   // Direct reports of each L1 leader share one card height, taken from the
   // tallest card in that group. Other levels keep their own sizes.
   useLayoutEffect(() => {
@@ -623,7 +750,7 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
     equalizeLevelOneReports()
     window.addEventListener('resize', equalizeLevelOneReports)
     return () => window.removeEventListener('resize', equalizeLevelOneReports)
-  }, [chartRoot, expanded, compact, isolate, selectedPath])
+  }, [chartRoot, expanded, compact, isolate, selectedPath, branchFilterKey])
 
   useLayoutEffect(() => {
     if (hasFitted.current) {
@@ -697,6 +824,7 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
   // selected person below this level cannot reopen their team.
   function showLevels(depth: number | 'all') {
     setIsolate(false)
+    setBranchKeys(null)
     setLevelPreset(depth)
     skipRevealRef.current = true
     if (depth === 'all') {
@@ -712,23 +840,114 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
     }
   }
 
-  async function exportChart(kind: 'image' | 'pdf') {
-    const canvas = canvasRef.current
-    if (!canvas || exporting) {
+  function toggleBranch(branchPath: OrgPath) {
+    const key = pathKey(branchPath)
+    const allKeys = branches.map((branch) => pathKey(branch.path))
+    const next = new Set(branchKeys ?? allKeys)
+    const removing = next.has(key)
+    if (removing) {
+      next.delete(key)
+    } else {
+      next.add(key)
+    }
+
+    setLevelPreset(null)
+    if (removing && next.size === 0) {
       return
     }
+    if (next.size === allKeys.length) {
+      setBranchKeys(null)
+      return
+    }
+
+    setBranchKeys(next)
+    setExpanded((current) => {
+      const expandedNext = new Set(current)
+      ancestorKeys(branchPath).forEach((ancestor) => expandedNext.add(ancestor))
+      if (!removing) {
+        expandedNext.add(key)
+      }
+      return expandedNext
+    })
+
+    if (removing && isPathWithin(selectedPath, branchPath)) {
+      setIsolate(false)
+      const fallback = branches.find((branch) => next.has(pathKey(branch.path)))
+      if (fallback) {
+        onSelect(fallback.path)
+      }
+    }
+  }
+
+  function expandedForDepth(depth: Exclude<PageDepth, 'current'>): Set<string> {
+    const offset = chartRootPath.length === 0 ? leadershipOffset(chartRoot) : 0
+    return new Set(keysToDepth(chartRoot, chartRootPath.length + offset + depth, chartRootPath))
+  }
+
+  function waitForPaint(): Promise<void> {
+    return new Promise((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+    })
+  }
+
+  async function confirmExport(setup: ChartExportSetup) {
+    const canvas = canvasRef.current
+    if (!canvas || !exportKind || exportingRef.current) {
+      return
+    }
+    const kind = exportKind
     setProfileOpen(false)
     setExporting(kind)
+    exportingRef.current = true
+    const previous = {
+      branchKeys,
+      isolate,
+      expanded,
+      levelPreset,
+    }
     try {
       if (kind === 'image') {
-        await downloadChartImage(canvas)
-      } else {
-        await downloadChartPdf(canvas)
+        setExportNote('Preparing image…')
+        await downloadChartImage(canvas, setup)
+        setExportKind(null)
+        return
       }
+
+      const images: HTMLCanvasElement[] = []
+      for (let index = 0; index < setup.pages.length; index += 1) {
+        const page = setup.pages[index]
+        setExportNote(`Preparing page ${index + 1} of ${setup.pages.length}…`)
+        const showAllTeams = page.branchKeys.length === 0 || page.branchKeys.length >= branches.length
+        const pageExpanded = page.depth === 'current' ? new Set(previous.expanded) : expandedForDepth(page.depth)
+        if (page.depth !== 0) {
+          page.branchKeys.forEach((key) => {
+            ancestorKeys(pathFromKey(key)).forEach((ancestor) => pageExpanded.add(ancestor))
+          })
+        }
+        flushSync(() => {
+          setIsolate(false)
+          setBranchKeys(showAllTeams ? null : new Set(page.branchKeys))
+          setExpanded(pageExpanded)
+        })
+        await waitForPaint()
+        const shot = await captureChartCanvas(canvas)
+        images.push(placeChartOnPaper(shot, setup.size, setup.orientation))
+      }
+      setExportNote('Saving PDF…')
+      await downloadChartPdf(images, setup)
+      setExportKind(null)
     } catch {
       window.alert('Could not download the chart. Try again.')
     } finally {
+      exportingRef.current = false
+      flushSync(() => {
+        setBranchKeys(previous.branchKeys)
+        setIsolate(previous.isolate)
+        setExpanded(previous.expanded)
+        setLevelPreset(previous.levelPreset)
+      })
       setExporting(null)
+      setExportNote(null)
     }
   }
 
@@ -745,7 +964,15 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
           <span>
             Showing <strong>{chartRoot.name}</strong> as the top of the chart
           </span>
-          <button type="button" className="chip" onClick={() => setFocusPath(null)}>
+          <button
+            type="button"
+            className="chip"
+            onClick={() => {
+              setFocusPath(null)
+              setBranchKeys(null)
+              setIsolate(false)
+            }}
+          >
             Show full organisation
           </button>
         </div>
@@ -759,9 +986,12 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
             expanded={expanded}
             showRollup={showRollup}
             onSelect={activate}
-            siblingCount={1}
+            siblingIndexes={[chartRootPath[chartRootPath.length - 1] ?? 0]}
             isolate={isolate}
+            branchParentPath={branchParentPath}
+            branchKeys={branchKeys}
             gridDepth={l1PathLength}
+            level1Depth={level1Depth}
           />
         </div>
       </div>
@@ -784,6 +1014,7 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
             node={previewNode}
             manager={managerNode}
             showRollup={showRollup}
+            countScope={previewPath.length === level1Depth ? 'direct' : 'rollup'}
             variant="popover"
             onOpenManager={managerNode ? () => activate(parentPath(previewPath)) : undefined}
             onClose={() => setProfileOpen(false)}
@@ -828,6 +1059,47 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
               </div>
             </section>
 
+            {branches.length > 1 ? (
+              <section className="dock-block">
+                <div className="dock-row">
+                  <p className="dock-title" id={`${branchesId}-label`}>
+                    Branches
+                  </p>
+                  {branchKeys ? (
+                    <button
+                      type="button"
+                      className="dock-fit"
+                      onClick={() => {
+                        setBranchKeys(null)
+                        setIsolate(false)
+                      }}
+                    >
+                      All
+                    </button>
+                  ) : (
+                    <span className="dock-zoom-value">{branches.length}</span>
+                  )}
+                </div>
+                <p className="dock-hint">Select one or more teams</p>
+                <div className="dock-branches" role="group" aria-labelledby={`${branchesId}-label`}>
+                  {branches.map((branch) => {
+                    const key = pathKey(branch.path)
+                    const checked = !branchKeys || branchKeys.has(key)
+                    return (
+                      <label key={key} className="dock-branch" title={branch.node.name}>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleBranch(branch.path)}
+                        />
+                        <span>{branch.node.name}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+              </section>
+            ) : null}
+
             <section className="dock-block">
               <div className="dock-row">
                 <p className="dock-title" id={`${zoomId}-label`}>
@@ -864,10 +1136,24 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
                   className={isolate ? 'is-on' : undefined}
                   title="Hide other teams"
                   onClick={() => {
-                    setIsolate(!isolate)
-                    if (!isolate) {
-                      setLevelPreset(null)
-                      setExpanded(new Set([...ancestorKeys(selectedPath), pathKey(selectedPath)]))
+                    const next = !isolate
+                    setIsolate(next)
+                    if (!next) {
+                      setBranchKeys((current) => {
+                        if (!current || current.size !== 1) {
+                          return current
+                        }
+                        const only = [...current][0]
+                        const currentBranch = branches.find((branch) => isPathWithin(selectedPath, branch.path))
+                        return currentBranch && pathKey(currentBranch.path) === only ? null : current
+                      })
+                      return
+                    }
+                    setLevelPreset(null)
+                    setExpanded(new Set([...ancestorKeys(selectedPath), pathKey(selectedPath)]))
+                    const currentBranch = branches.find((branch) => isPathWithin(selectedPath, branch.path))
+                    if (currentBranch && branches.length > 1) {
+                      setBranchKeys(new Set([pathKey(currentBranch.path)]))
                     }
                   }}
                 />
@@ -901,6 +1187,8 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
                   title="Make this person the top"
                   onClick={() => {
                     setFocusPath(selectedPath)
+                    setBranchKeys(null)
+                    setIsolate(false)
                     setExpanded((current) => new Set(current).add(pathKey(selectedPath)))
                   }}
                 >
@@ -911,20 +1199,12 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
 
             <section className="dock-block">
               <p className="dock-title">Download</p>
-              <p className="dock-hint">Current org chart only</p>
+              <p className="dock-hint">Size, layout, and pages</p>
               <div className="dock-levels" role="group" aria-label="Download chart">
-                <button
-                  type="button"
-                  disabled={exporting !== null}
-                  onClick={() => void exportChart('image')}
-                >
+                <button type="button" disabled={exporting !== null} onClick={() => setExportKind('image')}>
                   {exporting === 'image' ? 'Saving…' : 'Image'}
                 </button>
-                <button
-                  type="button"
-                  disabled={exporting !== null}
-                  onClick={() => void exportChart('pdf')}
-                >
+                <button type="button" disabled={exporting !== null} onClick={() => setExportKind('pdf')}>
                   {exporting === 'pdf' ? 'Saving…' : 'PDF'}
                 </button>
               </div>
@@ -932,8 +1212,45 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
           </div>
         ) : null}
       </aside>
+      {exportKind ? (
+        <ExportDialog
+          key={exportKind}
+          kind={exportKind}
+          branches={branches.map((branch) => ({ key: pathKey(branch.path), name: branch.node.name }))}
+          busy={exporting !== null}
+          status={exportNote}
+          onClose={() => {
+            if (!exportingRef.current) {
+              setExportKind(null)
+            }
+          }}
+          onConfirm={(setup) => void confirmExport(setup)}
+        />
+      ) : null}
     </section>
   )
+}
+
+function listChartBranches(node: OrgNode, basePath: OrgPath): { node: OrgNode; path: OrgPath }[] {
+  const offset = basePath.length === 0 ? leadershipOffset(node) : 0
+  const side = node.children
+    .map((child, index) => ({ node: child, path: [...basePath, index] }))
+    .filter((branch) => branch.node.layout === 'side')
+  let parent = node
+  let path = basePath
+  for (let step = 0; step < offset; step += 1) {
+    const nextIndex = parent.children.findIndex((child) => !isProjectNode(child) && child.layout !== 'side')
+    const next = nextIndex >= 0 ? parent.children[nextIndex] : undefined
+    if (!next) {
+      return side
+    }
+    parent = next
+    path = [...path, nextIndex]
+  }
+  const teams = parent.children
+    .map((child, index) => ({ node: child, path: [...path, index] }))
+    .filter((branch) => !isProjectNode(branch.node) && branch.node.layout !== 'side')
+  return [...side, ...teams]
 }
 
 function getFocusedNode(root: OrgNode, path: OrgPath): OrgNode {

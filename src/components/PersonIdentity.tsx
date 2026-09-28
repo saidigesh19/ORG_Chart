@@ -1,11 +1,13 @@
 import type { OrgNode } from '../types/org'
-import { divisionTone, headcountLabel, initials, isProjectNode } from '../lib/org-tree'
+import { directReportLabel, divisionTone, headcountLabel, initials, isProjectNode } from '../lib/org-tree'
 
 type PersonIdentityProps = {
   node: OrgNode
   showRollup: boolean
   size?: 'hero' | 'card'
   details?: boolean
+  /** Level 1 cards count only people who report directly to that leader. */
+  countScope?: 'rollup' | 'direct'
 }
 
 function detailFields(node: OrgNode): Array<[string, string]> {
@@ -53,8 +55,8 @@ export function PersonDetails({ node }: { node: OrgNode }) {
   )
 }
 
-export function PersonIdentity({ node, showRollup, size = 'card', details }: PersonIdentityProps) {
-  const badge = headcountLabel(node, showRollup)
+export function PersonIdentity({ node, showRollup, size = 'card', details, countScope = 'rollup' }: PersonIdentityProps) {
+  const badge = countScope === 'direct' ? directReportLabel(node) : headcountLabel(node, showRollup)
   const tone = isProjectNode(node) ? 'project' : divisionTone(node.division ?? node.section)
   const showDetails = details ?? size === 'hero'
 

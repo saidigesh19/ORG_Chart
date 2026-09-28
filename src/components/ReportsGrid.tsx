@@ -6,10 +6,11 @@ type ReportsGridProps = {
   parent: OrgNode
   parentPath: OrgPath
   showRollup: boolean
+  countScope?: 'rollup' | 'direct'
   onOpen: (path: OrgPath) => void
 }
 
-export function ReportsGrid({ parent, parentPath, showRollup, onOpen }: ReportsGridProps) {
+export function ReportsGrid({ parent, parentPath, showRollup, countScope = 'rollup', onOpen }: ReportsGridProps) {
   const projects = hasProjectChildren(parent)
 
   if (projects) {
@@ -62,6 +63,7 @@ export function ReportsGrid({ parent, parentPath, showRollup, onOpen }: ReportsG
               key={pathKey(path)}
               node={child}
               showRollup={showRollup}
+              countScope={countScope}
               onOpen={() => onOpen(path)}
             />
           )

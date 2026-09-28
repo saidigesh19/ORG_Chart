@@ -672,6 +672,33 @@ function usableManager(value: string | undefined, selfName: string): string | un
   return manager
 }
 
+/**
+ * Move one leader out of the operating lead's row so they report to the CEO
+ * on their own, beside the main line. Their own team stays underneath them.
+ */
+function seatLeaderBesideCeo(ceo: OrgNode, leaderName: string): string | null {
+  if (!/^ceo$/i.test(ceo.designation) || ceo.children.length !== 1) {
+    return null
+  }
+
+  const operating = ceo.children[0]
+  if (operating.kind === 'project') {
+    return null
+  }
+
+  const index = operating.children.findIndex((child) => namesLikelyMatch(child.name, leaderName))
+  if (index < 0) {
+    return null
+  }
+
+  const leader = operating.children[index]
+  operating.children.splice(index, 1)
+  leader.manager = ceo.name
+  leader.layout = 'side'
+  ceo.children = [leader, operating]
+  return leader.name
+}
+
 export function workbookToOrg(buffer: ArrayBuffer): WorkbookOrgData {
   const sheets = readWorkbookSheets(buffer)
   if (sheets.length === 0) {
@@ -819,6 +846,11 @@ export function workbookToOrg(buffer: ArrayBuffer): WorkbookOrgData {
     }
     extraTop = 1
     warnings.push(`${ceoName} was placed at the top as CEO.`)
+  }
+
+  const sideLeader = seatLeaderBesideCeo(businessRoot, 'Balu Balachandar')
+  if (sideLeader) {
+    warnings.push(`${sideLeader} now reports to ${businessRoot.name}.`)
   }
 
   const root = prepareOrgTree(

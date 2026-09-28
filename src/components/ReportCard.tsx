@@ -7,10 +7,11 @@ import { PersonIdentity } from './PersonIdentity'
 type ReportCardProps = {
   node: OrgNode
   showRollup: boolean
+  countScope?: 'rollup' | 'direct'
   onOpen: () => void
 }
 
-export function ReportCard({ node, showRollup, onOpen }: ReportCardProps) {
+export function ReportCard({ node, showRollup, countScope = 'rollup', onOpen }: ReportCardProps) {
   const hasReports = node.children.length > 0
   const projects = hasProjectChildren(node)
   const tone = isProjectNode(node) ? 'project' : divisionTone(node.division ?? node.section)
@@ -38,7 +39,7 @@ export function ReportCard({ node, showRollup, onOpen }: ReportCardProps) {
       onKeyDown={onKeyDown}
       aria-label={`${node.departmentCategory ?? node.division ?? node.section ? `${node.departmentCategory ?? node.division ?? node.section}, ` : ''}${node.name}, ${node.designation}. ${hint}`}
     >
-      <PersonIdentity node={node} showRollup={showRollup} />
+      <PersonIdentity node={node} showRollup={showRollup} countScope={countScope} />
       {projects ? (
         <>
           <div className="card-meta">

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { OrgNode } from '../types/org'
-import { divisionTone, hasProjectChildren, isProjectNode, rollupHeadcount } from '../lib/org-tree'
+import { directReportCount, divisionTone, hasProjectChildren, isProjectNode, rollupHeadcount } from '../lib/org-tree'
 import { PersonDetails, PersonIdentity } from './PersonIdentity'
 
 const MEMBER_PREVIEW = 10
@@ -9,6 +9,7 @@ type PersonPanelProps = {
   node: OrgNode
   manager?: OrgNode
   showRollup: boolean
+  countScope?: 'rollup' | 'direct'
   variant?: 'default' | 'popover'
   onOpenManager?: () => void
   onClose?: () => void
@@ -18,6 +19,7 @@ export function PersonPanel({
   node,
   manager,
   showRollup,
+  countScope = 'rollup',
   variant = 'default',
   onOpenManager,
   onClose,
@@ -66,7 +68,13 @@ export function PersonPanel({
       )}
 
       <div className="person-panel-body">
-        <PersonIdentity node={node} showRollup={showRollup} size={compact ? 'card' : 'hero'} details={!compact} />
+        <PersonIdentity
+          node={node}
+          showRollup={showRollup}
+          countScope={countScope}
+          size={compact ? 'card' : 'hero'}
+          details={!compact}
+        />
 
         <div className="person-panel-side">
           <div className="profile-metrics" aria-label="Reporting summary">
@@ -84,7 +92,7 @@ export function PersonPanel({
             ) : (
               <>
                 <div>
-                  <strong>{node.children.length}</strong>
+                  <strong>{hasProjectChildren(node) ? node.children.length : directReportCount(node)}</strong>
                   <span>{hasProjectChildren(node) ? 'Projects' : 'Direct reports'}</span>
                 </div>
                 <div>

@@ -3,6 +3,30 @@ import { jsPDF } from 'jspdf'
 
 const PADDING = 32
 const PIXEL_RATIO = 2
+const PRINT_DPI = 150
+const PAGE_MARGIN_MM = 8
+
+export type PaperSize = 'a4' | 'a3' | 'letter' | 'tabloid'
+export type PageOrientation = 'landscape' | 'portrait'
+export type PageDepth = 'current' | 0 | 1 | 2
+
+export type PdfPageSetup = {
+  depth: PageDepth
+  branchKeys: string[]
+}
+
+export type ChartExportSetup = {
+  size: PaperSize
+  orientation: PageOrientation
+  pages: PdfPageSetup[]
+}
+
+export const PAPER_SIZES: { id: PaperSize; label: string; mm: [number, number] }[] = [
+  { id: 'a4', label: 'A4', mm: [210, 297] },
+  { id: 'a3', label: 'A3', mm: [297, 420] },
+  { id: 'letter', label: 'Letter', mm: [215.9, 279.4] },
+  { id: 'tabloid', label: 'Tabloid', mm: [279.4, 431.8] },
+]
 const BADGE_SRC = '/icon2.webp'
 const WORDMARK_SRC = '/icon1.png'
 const BADGE_HEIGHT = 72
@@ -121,36 +145,76 @@ function triggerDownload(blob: Blob, filename: string) {
   URL.revokeObjectURL(url)
 }
 
-export async function downloadChartImage(canvas: HTMLElement) {
+function paperPixels(size: PaperSize, orientation: PageOrientation): { width: number; height: number } {
+  const spec = PAPER_SIZES.find((paper) => paper.id === size) ?? PAPER_SIZES[0]
+  const [shortSide, longSide] = spec.mm
+  const mmWidth = orientation === 'landscape' ? longSide : shortSide
+  const mmHeight = orientation === 'landscape' ? shortSide : longSide
+  return {
+    width: Math.round((mmWidth / 25.4) * PRINT_DPI),
+    height: Math.round((mmHeight / 25.4) * PRINT_DPI),
+  }
+}
+
+/** Fit a captured chart onto a page of the chosen size and orientation. */
+export function placeChartOnPaper(
+  source: HTMLCanvasElement,
+  size: PaperSize,
+  orientation: PageOrientation,
+): HTMLCanvasElement {
+  const { width, height } = paperPixels(size, orientation)
+  const page = document.createElement('canvas')
+  page.width = width
+  page.height = height
+  const context = page.getContext('2d')
+  if (!context) {
+    throw new Error('Could not prepare the page.')
+  }
+  const background = panelBackground()
+  context.fillStyle = background
+  context.fillRect(0, 0, width, height)
+  const margin = Math.round((PAGE_MARGIN_MM / 25.4) * PRINT_DPI)
+  const maxWidth = Math.max(width - margin * 2, 1)
+  const maxHeight = Math.max(height - margin * 2, 1)
+  const scale = Math.min(maxWidth / source.width, maxHeight / source.height, 2)
+  const drawWidth = Math.round(source.width * scale)
+  const drawHeight = Math.round(source.height * scale)
+  context.drawImage(source, Math.round((width - drawWidth) / 2), Math.round((height - drawHeight) / 2), drawWidth, drawHeight)
+  return page
+}
+
+export async function downloadChartImage(
+  canvas: HTMLElement,
+  setup: Pick<ChartExportSetup, 'size' | 'orientation'>,
+) {
   const image = await captureChartCanvas(canvas)
-  const blob = await new Promise<Blob | null>((resolve) => image.toBlob(resolve, 'image/png'))
+  const page = placeChartOnPaper(image, setup.size, setup.orientation)
+  const blob = await new Promise<Blob | null>((resolve) => page.toBlob(resolve, 'image/png'))
   if (!blob) {
     throw new Error('Could not create the image.')
   }
-  triggerDownload(blob, `org-chart-${fileStamp()}.png`)
+  triggerDownload(blob, `org-chart-${setup.size}-${setup.orientation}-${fileStamp()}.png`)
 }
 
-export async function downloadChartPdf(canvas: HTMLElement) {
-  const image = await captureChartCanvas(canvas)
-  const dataUrl = image.toDataURL('image/png')
-  const max = 2400
-  let width = image.width
-  let height = image.height
-  if (width > max || height > max) {
-    const scale = Math.min(max / width, max / height)
-    width = Math.round(width * scale)
-    height = Math.round(height * scale)
+export async function downloadChartPdf(pages: HTMLCanvasElement[], setup: ChartExportSetup) {
+  if (pages.length === 0) {
+    throw new Error('Choose at least one page.')
   }
-
   const pdf = new jsPDF({
-    orientation: width >= height ? 'landscape' : 'portrait',
-    unit: 'px',
-    format: [width, height],
-    hotfixes: ['px_scaling'],
+    orientation: setup.orientation,
+    unit: 'mm',
+    format: setup.size,
   })
   const [red, green, blue] = parseRgb(panelBackground())
-  pdf.setFillColor(red, green, blue)
-  pdf.rect(0, 0, width, height, 'F')
-  pdf.addImage(dataUrl, 'PNG', 0, 0, width, height)
-  pdf.save(`org-chart-${fileStamp()}.pdf`)
+  const width = pdf.internal.pageSize.getWidth()
+  const height = pdf.internal.pageSize.getHeight()
+  pages.forEach((page, index) => {
+    if (index > 0) {
+      pdf.addPage(setup.size, setup.orientation)
+    }
+    pdf.setFillColor(red, green, blue)
+    pdf.rect(0, 0, width, height, 'F')
+    pdf.addImage(page.toDataURL('image/png'), 'PNG', 0, 0, width, height)
+  })
+  pdf.save(`org-chart-${setup.size}-${setup.orientation}-${fileStamp()}.pdf`)
 }

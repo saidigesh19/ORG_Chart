@@ -21,6 +21,8 @@ export type OrgNode = {
   section: string | null
   count: number | null
   kind?: 'person' | 'project'
+  /** Drawn beside the parent with its own connector, off the main reporting line. */
+  layout?: 'side'
   members?: OrgNode[]
   children: OrgNode[]
 }
