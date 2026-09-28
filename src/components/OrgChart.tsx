@@ -252,7 +252,10 @@ function ChartBox({
 
       {sideEntries.map(({ child, index }) => (
         <div className="org-side" key={pathKey([...path, index])}>
-          <span className="org-side-link" aria-hidden="true" />
+          <span className="org-side-link" aria-hidden="true">
+            <span className="org-side-link-h" />
+            <span className="org-side-link-v" />
+          </span>
           <ChartBox
             node={child}
             path={[...path, index]}
@@ -707,16 +710,164 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
     setZoomLocked(false)
   }, [])
 
-  // An open side team hangs beside the level-1 row. Drop that row below it.
+  // Place Balu left of the stem between the CEO and Ramesh, and drop the
+  // level-1 row when his own report would cover those cards. Spacing is inline
+  // so the PDF snapshot keeps the same gaps after the chart is cloned.
   useLayoutEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) {
       return
     }
-    const sideTeam = canvas.querySelector<HTMLElement>('.org-side .org-kids')
-    const space = sideTeam ? sideTeam.offsetHeight + 12 : 0
-    canvas.style.setProperty('--side-report-space', `${space}px`)
-  }, [chartRoot, expanded, compact, isolate, selectedPath, branchFilterKey, zoom])
+
+    const readZoom = () => {
+      const raw = getComputedStyle(canvas).zoom
+      const value = Number.parseFloat(raw)
+      if (!Number.isFinite(value) || value <= 0) {
+        return 1
+      }
+      return raw.includes('%') ? value / 100 : value
+    }
+
+    const readPx = (element: HTMLElement, name: string, fallback: number) => {
+      const value = Number.parseFloat(getComputedStyle(element).getPropertyValue(name))
+      return Number.isFinite(value) ? value : fallback
+    }
+
+    const sharesColumn = (above: DOMRect, below: DOMRect) =>
+      above.left < below.right - 1 && above.right > below.left + 1
+
+    const pushBelow = (above: DOMRect, below: DOMRect, zoomFactor: number, cardGap: number) => {
+      if (!sharesColumn(above, below)) {
+        return 0
+      }
+      return Math.max(0, (above.bottom + cardGap * zoomFactor - below.top) / zoomFactor)
+    }
+
+    const place = () => {
+      const node = canvas.querySelector<HTMLElement>(':scope > .org-node')
+      const side = node?.querySelector<HTMLElement>(':scope > .org-side') ?? null
+      const ceo = node?.querySelector<HTMLElement>(':scope > .org-box') ?? null
+      const ceoKids = node?.querySelector<HTMLElement>(':scope > .org-kids') ?? null
+      const levelKids = node?.querySelector<HTMLElement>(
+        ':scope > .org-kids > .org-branch > .org-node > .org-kids',
+      )
+      node?.style.removeProperty('padding-left')
+      if (!node || !side || !ceo || !ceoKids) {
+        ceoKids?.style.removeProperty('padding-top')
+        ceoKids?.style.removeProperty('--kids-stem')
+        levelKids?.style.removeProperty('padding-top')
+        levelKids?.style.removeProperty('--kids-stem')
+        return
+      }
+
+      const zoomFactor = readZoom()
+      const stem = readPx(node, '--stem', 18)
+      const gap = readPx(node, '--side-gap', 36)
+      const cardHeight = readPx(node, '--leader-card-height', 122)
+      const cardGap = 24
+      const sideCard = side.querySelector<HTMLElement>(':scope > .org-node > .org-box')
+      const cardWidth = sideCard ? sideCard.getBoundingClientRect().width / zoomFactor : 188
+
+      const setKidsGap = (kids: HTMLElement, padding: number) => {
+        kids.style.paddingTop = `${padding}px`
+        kids.style.setProperty('--kids-stem', `${padding}px`)
+      }
+
+      setKidsGap(ceoKids, cardHeight + stem * 2)
+      if (levelKids) {
+        setKidsGap(levelKids, stem)
+      }
+
+      const origin = node.getBoundingClientRect()
+      const local = (element: HTMLElement) => {
+        const box = element.getBoundingClientRect()
+        return {
+          top: (box.top - origin.top) / zoomFactor,
+          left: (box.left - origin.left) / zoomFactor,
+          width: box.width / zoomFactor,
+          height: box.height / zoomFactor,
+        }
+      }
+      const ceoBox = local(ceo)
+      let baluLeft = ceoBox.left - gap - cardWidth
+      const baluTop = ceoBox.top + ceoBox.height + stem * 2
+
+      const applySide = (left: number) => {
+        side.style.top = `${baluTop}px`
+        side.style.left = `${left}px`
+        const placed = side.getBoundingClientRect()
+        const baluCenter = (placed.left - origin.left) / zoomFactor + placed.width / zoomFactor / 2
+        const ceoMid = ceoBox.top + ceoBox.height / 2
+        const link = side.querySelector<HTMLElement>('.org-side-link')
+        if (link) {
+          link.style.width = `${Math.max(ceoBox.left - baluCenter, 0) + 1}px`
+          link.style.height = `${Math.max(baluTop - ceoMid, 0)}px`
+        }
+      }
+      applySide(baluLeft)
+
+      const operating = node.querySelector<HTMLElement>(
+        ':scope > .org-kids > .org-branch > .org-node > .org-box',
+      )
+      if (operating) {
+        const lead = operating.getBoundingClientRect()
+        const sideBox = side.getBoundingClientRect()
+        const overlap = sideBox.right + gap * zoomFactor - lead.left
+        if (overlap > 1) {
+          baluLeft -= overlap / zoomFactor
+          applySide(baluLeft)
+        }
+      }
+
+      const sideCards = () => [...side.querySelectorAll<HTMLElement>('.org-box')]
+      const levelCards = () =>
+        levelKids ? [...levelKids.querySelectorAll<HTMLElement>('.org-box')] : []
+
+      const leadPush = () => {
+        if (!operating) {
+          return 0
+        }
+        const lead = operating.getBoundingClientRect()
+        return sideCards().reduce(
+          (space, card) => Math.max(space, pushBelow(card.getBoundingClientRect(), lead, zoomFactor, cardGap)),
+          0,
+        )
+      }
+      const reportPush = () =>
+        levelCards().reduce((space, card) => {
+          const box = card.getBoundingClientRect()
+          return sideCards().reduce(
+            (inner, blocker) =>
+              Math.max(inner, pushBelow(blocker.getBoundingClientRect(), box, zoomFactor, cardGap)),
+            space,
+          )
+        }, 0)
+
+      const leadExtra = leadPush()
+      if (leadExtra > 0) {
+        setKidsGap(ceoKids, cardHeight + stem * 2 + Math.ceil(leadExtra))
+      }
+      const reportExtra = reportPush()
+      if (levelKids && reportExtra > 0) {
+        setKidsGap(levelKids, stem + Math.ceil(reportExtra))
+      }
+
+      const leadAgain = leadPush()
+      if (leadAgain > 0.5) {
+        const current = Number.parseFloat(ceoKids.style.paddingTop) || 0
+        setKidsGap(ceoKids, current + Math.ceil(leadAgain))
+      }
+      const reportAgain = reportPush()
+      if (levelKids && reportAgain > 0.5) {
+        const current = Number.parseFloat(levelKids.style.paddingTop) || 0
+        setKidsGap(levelKids, current + Math.ceil(reportAgain))
+      }
+    }
+
+    place()
+    canvas.addEventListener('chart-relayout', place)
+    return () => canvas.removeEventListener('chart-relayout', place)
+  }, [chartRoot, expanded, compact, isolate, selectedPath, branchFilterKey, zoom, exporting])
 
   // Direct reports of each L1 leader share one card height, taken from the
   // tallest card in that group. Other levels keep their own sizes.
@@ -748,6 +899,7 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
     }
 
     equalizeLevelOneReports()
+    canvas?.dispatchEvent(new Event('chart-relayout'))
     window.addEventListener('resize', equalizeLevelOneReports)
     return () => window.removeEventListener('resize', equalizeLevelOneReports)
   }, [chartRoot, expanded, compact, isolate, selectedPath, branchFilterKey])
@@ -897,7 +1049,9 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
     }
     const kind = exportKind
     setProfileOpen(false)
-    setExporting(kind)
+    flushSync(() => {
+      setExporting(kind)
+    })
     exportingRef.current = true
     const previous = {
       branchKeys,
@@ -908,6 +1062,7 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
     try {
       if (kind === 'image') {
         setExportNote('Preparing image…')
+        await waitForPaint()
         await downloadChartImage(canvas, setup)
         setExportKind(null)
         return

@@ -673,10 +673,11 @@ function usableManager(value: string | undefined, selfName: string): string | un
 }
 
 /**
- * Move one leader out of the operating lead's row so they report to the CEO
- * on their own, beside the main line. Their own team stays underneath them.
+ * Move one leader onto their own line to the CEO, left of the spine and
+ * between the CEO and the operating lead. They are not peers. Their team
+ * stays underneath them.
  */
-function seatLeaderBesideCeo(ceo: OrgNode, leaderName: string): string | null {
+function placeLeaderLeftOfSpine(ceo: OrgNode, leaderName: string): string | null {
   if (!/^ceo$/i.test(ceo.designation) || ceo.children.length !== 1) {
     return null
   }
@@ -695,6 +696,7 @@ function seatLeaderBesideCeo(ceo: OrgNode, leaderName: string): string | null {
   operating.children.splice(index, 1)
   leader.manager = ceo.name
   leader.layout = 'side'
+  leader.designation = 'Senior VP, Talent & Staffing Operations - Onsite'
   ceo.children = [leader, operating]
   return leader.name
 }
@@ -848,7 +850,7 @@ export function workbookToOrg(buffer: ArrayBuffer): WorkbookOrgData {
     warnings.push(`${ceoName} was placed at the top as CEO.`)
   }
 
-  const sideLeader = seatLeaderBesideCeo(businessRoot, 'Balu Balachandar')
+  const sideLeader = placeLeaderLeftOfSpine(businessRoot, 'Balu Balachandar')
   if (sideLeader) {
     warnings.push(`${sideLeader} now reports to ${businessRoot.name}.`)
   }

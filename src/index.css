@@ -1390,19 +1390,9 @@ code {
 }
 
 .chart-canvas {
-  --side-report-space: 0px;
   width: max-content;
   min-width: 100%;
   zoom: var(--chart-zoom);
-}
-
-/* Keep a side leader's open team beside the stem, above the level-1 row. */
-.chart-canvas > .org-node > .org-kids > .org-branch > .org-node > .org-kids {
-  padding-top: calc(var(--stem) + var(--side-report-space));
-}
-
-.chart-canvas > .org-node > .org-kids > .org-branch > .org-node > .org-kids::before {
-  height: calc(var(--stem) + var(--side-report-space));
 }
 
 .chart-canvas > .org-node {
@@ -1432,42 +1422,39 @@ code {
 .org-side {
   position: absolute;
   z-index: 2;
-  /* Same row as the operating lead: below the CEO, beside that card. */
-  top: calc(var(--leader-card-height) + (var(--stem) * 2));
-  right: calc(50% + (var(--leader-card-width) / 2) + var(--side-gap));
+  top: var(--side-top, 0px);
+  left: var(--side-left, 0px);
+  right: auto;
 }
 
 .org-side-link {
   position: absolute;
   left: 50%;
   bottom: 100%;
-  /* Reach the left edge of the CEO card, at its vertical centre. */
-  width: calc(50% + var(--side-gap) + 1px);
-  height: calc(var(--leader-card-height) / 2 + var(--stem) * 2);
+  /* From the CEO card's left centre, across, then down to this card's top centre. */
+  width: var(--side-link-width, 0px);
+  height: var(--side-link-height, 0px);
   pointer-events: none;
 }
 
-.org-side-link::before,
-.org-side-link::after {
-  content: '';
+.org-side-link-h,
+.org-side-link-v {
   position: absolute;
-  border: 0 solid var(--rule);
-}
-
-.org-side-link::before {
   left: 0;
   top: 0;
-  width: 0;
-  height: 100%;
-  border-left-width: 1px;
+  background: var(--rule);
 }
 
-.org-side-link::after {
-  left: 0;
-  top: 0;
+.org-side-link-h {
   width: 100%;
-  height: 0;
-  border-top-width: 1px;
+  height: 2px;
+  transform: translateY(-1px);
+}
+
+.org-side-link-v {
+  width: 2px;
+  height: 100%;
+  transform: translateX(-1px);
 }
 
 .org-side > .org-node > .org-box.has-inline-projects,
@@ -1626,7 +1613,20 @@ code {
   font-size: 0.78rem;
   font-weight: 550;
   line-height: 1.3;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
+}
+
+.chart-wrap.is-exporting .org-box:not(.has-inline-projects):not(.is-project) {
+  height: auto;
+  min-height: var(--leader-card-height);
+  max-height: none;
+}
+
+.chart-wrap.is-exporting .org-box:not(.has-inline-projects):not(.is-project) .org-box-title {
+  display: block;
+  -webkit-line-clamp: unset;
+  line-clamp: unset;
+  overflow: visible;
 }
 
 .org-box-meta {
@@ -1767,13 +1767,17 @@ code {
   padding-top: var(--stem);
 }
 
+.org-kids .org-kids {
+  --kids-stem: initial;
+}
+
 .org-kids::before {
   content: '';
   position: absolute;
   top: 0;
   left: 50%;
-  height: var(--stem);
-  border-left: 1px solid var(--rule);
+  height: var(--kids-stem, var(--stem));
+  border-left: 2px solid var(--rule);
 }
 
 .org-branch {
@@ -1794,7 +1798,7 @@ code {
 
 /* One stem for a single child. Two stacked borders leave a short double line in the gap. */
 .org-kids:has(> .org-branch:only-child)::before {
-  height: calc(var(--stem) * 2);
+  height: calc(var(--kids-stem, var(--stem)) + var(--stem));
 }
 
 .org-branch:only-child::after {
@@ -1804,13 +1808,13 @@ code {
 .org-branch::before {
   left: 0;
   width: 100%;
-  border-top-width: 1px;
+  border-top-width: 2px;
 }
 
 .org-branch::after {
   left: 50%;
   height: var(--stem);
-  border-left-width: 1px;
+  border-left-width: 2px;
 }
 
 .org-branch:first-child::before {
@@ -1890,7 +1894,7 @@ code {
   top: calc(var(--stem) * -1);
   left: 50%;
   height: var(--stem);
-  border-left: 1px solid var(--rule);
+  border-left: 2px solid var(--rule);
 }
 
 .org-member {

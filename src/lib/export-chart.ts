@@ -1,10 +1,16 @@
 import { toCanvas } from 'html-to-image'
 import { jsPDF } from 'jspdf'
 
-const PADDING = 32
 const PIXEL_RATIO = 2
 const PRINT_DPI = 150
 const PAGE_MARGIN_MM = 8
+const CSS_REFERENCE_DPI = 96
+/** Header sizes from `.app-bar`, `.app-mark`, and `.app-logo`. */
+const BAR_CSS_HEIGHT = 54 + 17
+const WORDMARK_CSS_HEIGHT = 44
+const WORDMARK_CSS_WIDTH = 44 * (200 / 99)
+const WORDMARK_POSITION_Y = 0.485
+const CHART_GAP_CSS = 16
 
 export type PaperSize = 'a4' | 'a3' | 'letter' | 'tabloid'
 export type PageOrientation = 'landscape' | 'portrait'
@@ -29,10 +35,13 @@ export const PAPER_SIZES: { id: PaperSize; label: string; mm: [number, number] }
 ]
 const BADGE_SRC = '/icon2.webp'
 const WORDMARK_SRC = '/icon1.png'
-const BADGE_HEIGHT = 72
-const WORDMARK_HEIGHT = 40
-const LOCKUP_GAP = 14
-const LOGO_GAP = 16
+
+export type ChartCapture = {
+  chart: HTMLCanvasElement
+  background: string
+  badge: HTMLImageElement
+  wordmark: HTMLImageElement
+}
 
 function fileStamp(): string {
   return new Date().toISOString().slice(0, 10)
@@ -65,59 +74,49 @@ function loadImage(src: string): Promise<HTMLImageElement> {
   })
 }
 
-function scaledSize(image: HTMLImageElement, height: number): { width: number; height: number } {
-  return {
-    width: Math.round(height * (image.naturalWidth / Math.max(image.naturalHeight, 1))),
-    height,
-  }
+function cssToPage(px: number): number {
+  return px * (PRINT_DPI / CSS_REFERENCE_DPI)
 }
 
-function framedCanvas(
-  source: HTMLCanvasElement,
-  background: string,
-  badge: HTMLImageElement,
-  wordmark: HTMLImageElement,
-): HTMLCanvasElement {
-  const pad = PADDING * PIXEL_RATIO
-  const badgeSize = scaledSize(badge, BADGE_HEIGHT * PIXEL_RATIO)
-  const wordmarkSize = scaledSize(wordmark, WORDMARK_HEIGHT * PIXEL_RATIO)
-  const lockupGap = LOCKUP_GAP * PIXEL_RATIO
-  const lockupWidth = badgeSize.width + lockupGap + wordmarkSize.width
-  const top = pad + badgeSize.height + LOGO_GAP * PIXEL_RATIO
-  const frame = document.createElement('canvas')
-  frame.width = Math.max(source.width + pad * 2, lockupWidth + pad * 2)
-  frame.height = source.height + top + pad
-  const context = frame.getContext('2d')
-  if (!context) {
-    return source
-  }
-  context.fillStyle = background
-  context.fillRect(0, 0, frame.width, frame.height)
-  context.drawImage(badge, pad, pad, badgeSize.width, badgeSize.height)
-  const wordX = pad + badgeSize.width + lockupGap
-  const wordY = pad + (badgeSize.height - wordmarkSize.height) / 2
+/** Same crop as `.app-logo`: object-fit cover, object-position center 48.5%. */
+function wordmarkCrop(image: HTMLImageElement): { x: number; y: number; width: number; height: number } {
+  const destWidth = 200
+  const destHeight = 99
+  const scale = Math.max(destWidth / image.naturalWidth, destHeight / image.naturalHeight)
+  const offsetY = (destHeight - image.naturalHeight * scale) * WORDMARK_POSITION_Y
+  const y = Math.max(0, -offsetY / scale)
+  const height = Math.min(image.naturalHeight - y, destHeight / scale)
+  return { x: 0, y, width: image.naturalWidth, height }
+}
+
+function drawWordmark(
+  context: CanvasRenderingContext2D,
+  image: HTMLImageElement,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+) {
+  const crop = wordmarkCrop(image)
+  context.save()
   if (document.documentElement.dataset.theme === 'dark') {
-    context.save()
     context.filter = 'invert(1) hue-rotate(180deg)'
-    context.drawImage(wordmark, wordX, wordY, wordmarkSize.width, wordmarkSize.height)
-    context.restore()
-  } else {
-    context.drawImage(wordmark, wordX, wordY, wordmarkSize.width, wordmarkSize.height)
   }
-  context.drawImage(source, pad, top)
-  return frame
+  context.drawImage(image, crop.x, crop.y, crop.width, crop.height, x, y, width, height)
+  context.restore()
 }
 
-export async function captureChartCanvas(canvas: HTMLElement): Promise<HTMLCanvasElement> {
+export async function captureChartCanvas(canvas: HTMLElement): Promise<ChartCapture> {
   const tree = canvas.querySelector<HTMLElement>(':scope > .org-node') ?? canvas
   const previousZoom = canvas.style.getPropertyValue('--chart-zoom')
   canvas.style.setProperty('--chart-zoom', '1')
+  canvas.dispatchEvent(new Event('chart-relayout'))
   const background = panelBackground()
 
   try {
     await document.fonts.ready
     await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
-    const [snapshot, badge, wordmark] = await Promise.all([
+    const [chart, badge, wordmark] = await Promise.all([
       toCanvas(tree, {
         pixelRatio: PIXEL_RATIO,
         cacheBust: true,
@@ -126,7 +125,7 @@ export async function captureChartCanvas(canvas: HTMLElement): Promise<HTMLCanva
       loadImage(BADGE_SRC),
       loadImage(WORDMARK_SRC),
     ])
-    return framedCanvas(snapshot, background, badge, wordmark)
+    return { chart, background, badge, wordmark }
   } finally {
     if (previousZoom) {
       canvas.style.setProperty('--chart-zoom', previousZoom)
@@ -156,9 +155,9 @@ function paperPixels(size: PaperSize, orientation: PageOrientation): { width: nu
   }
 }
 
-/** Fit a captured chart onto a page of the chosen size and orientation. */
+/** Fit a captured chart onto a page, with the wordmark at the on-screen header size. */
 export function placeChartOnPaper(
-  source: HTMLCanvasElement,
+  capture: ChartCapture,
   size: PaperSize,
   orientation: PageOrientation,
 ): HTMLCanvasElement {
@@ -170,16 +169,32 @@ export function placeChartOnPaper(
   if (!context) {
     throw new Error('Could not prepare the page.')
   }
-  const background = panelBackground()
-  context.fillStyle = background
+  context.fillStyle = capture.background
   context.fillRect(0, 0, width, height)
   const margin = Math.round((PAGE_MARGIN_MM / 25.4) * PRINT_DPI)
+  const barHeight = cssToPage(BAR_CSS_HEIGHT)
+  const badgeHeight = barHeight * (362 / 213)
+  const badgeWidth = barHeight * (256 / 213)
+  const wordmarkHeight = cssToPage(WORDMARK_CSS_HEIGHT)
+  const wordmarkWidth = cssToPage(WORDMARK_CSS_WIDTH)
+  const wordmarkX = margin + cssToPage((54 + 16) * (256 / 213) + 14)
+  const wordmarkY = margin + (barHeight - wordmarkHeight) / 2
+  context.drawImage(capture.badge, margin, margin, badgeWidth, badgeHeight)
+  drawWordmark(context, capture.wordmark, wordmarkX, wordmarkY, wordmarkWidth, wordmarkHeight)
+
+  const contentTop = margin + badgeHeight + cssToPage(CHART_GAP_CSS)
   const maxWidth = Math.max(width - margin * 2, 1)
-  const maxHeight = Math.max(height - margin * 2, 1)
-  const scale = Math.min(maxWidth / source.width, maxHeight / source.height, 2)
-  const drawWidth = Math.round(source.width * scale)
-  const drawHeight = Math.round(source.height * scale)
-  context.drawImage(source, Math.round((width - drawWidth) / 2), Math.round((height - drawHeight) / 2), drawWidth, drawHeight)
+  const maxHeight = Math.max(height - contentTop - margin, 1)
+  const scale = Math.min(maxWidth / capture.chart.width, maxHeight / capture.chart.height, 2)
+  const drawWidth = Math.round(capture.chart.width * scale)
+  const drawHeight = Math.round(capture.chart.height * scale)
+  context.drawImage(
+    capture.chart,
+    Math.round((width - drawWidth) / 2),
+    Math.round(contentTop),
+    drawWidth,
+    drawHeight,
+  )
   return page
 }
 
@@ -187,8 +202,8 @@ export async function downloadChartImage(
   canvas: HTMLElement,
   setup: Pick<ChartExportSetup, 'size' | 'orientation'>,
 ) {
-  const image = await captureChartCanvas(canvas)
-  const page = placeChartOnPaper(image, setup.size, setup.orientation)
+  const capture = await captureChartCanvas(canvas)
+  const page = placeChartOnPaper(capture, setup.size, setup.orientation)
   const blob = await new Promise<Blob | null>((resolve) => page.toBlob(resolve, 'image/png'))
   if (!blob) {
     throw new Error('Could not create the image.')
