@@ -1,6 +1,7 @@
 import type { KeyboardEvent } from 'react'
 import type { OrgNode } from '../types/org'
-import { hasProjectChildren, isProjectNode } from '../lib/org-tree'
+import { divisionTone, hasProjectChildren, isProjectNode } from '../lib/org-tree'
+import { ManagerProjectList } from './ManagerProjectList'
 import { PersonIdentity } from './PersonIdentity'
 
 type ReportCardProps = {
@@ -12,6 +13,7 @@ type ReportCardProps = {
 export function ReportCard({ node, showRollup, onOpen }: ReportCardProps) {
   const hasReports = node.children.length > 0
   const projects = hasProjectChildren(node)
+  const tone = isProjectNode(node) ? 'project' : divisionTone(node.division ?? node.section)
   const hint = isProjectNode(node)
     ? node.designation
     : projects
@@ -29,7 +31,7 @@ export function ReportCard({ node, showRollup, onOpen }: ReportCardProps) {
 
   return (
     <article
-      className="card"
+      className={`card division-${tone}${isProjectNode(node) ? ' is-project' : ''}`}
       role="link"
       tabIndex={0}
       onClick={onOpen}
@@ -37,12 +39,21 @@ export function ReportCard({ node, showRollup, onOpen }: ReportCardProps) {
       aria-label={`${node.departmentCategory ?? node.division ?? node.section ? `${node.departmentCategory ?? node.division ?? node.section}, ` : ''}${node.name}, ${node.designation}. ${hint}`}
     >
       <PersonIdentity node={node} showRollup={showRollup} />
-      <div className="card-meta">
-        <span className="card-hint">{hint}</span>
-        <span className="card-chevron" aria-hidden="true">
-          →
-        </span>
-      </div>
+      {projects ? (
+        <>
+          <div className="card-meta">
+            <span className="card-hint">{hint}</span>
+          </div>
+          <ManagerProjectList projects={node.children} variant="card" />
+        </>
+      ) : (
+        <div className="card-meta">
+          <span className="card-hint">{hint}</span>
+          <span className="card-chevron" aria-hidden="true">
+            →
+          </span>
+        </div>
+      )}
     </article>
   )
 }

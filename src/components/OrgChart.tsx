@@ -24,6 +24,7 @@ import {
   pathKey,
 } from '../lib/org-tree'
 import { downloadChartImage, downloadChartPdf } from '../lib/export-chart'
+import { ManagerProjectList } from './ManagerProjectList'
 import { PersonPanel } from './PersonPanel'
 
 type OrgChartProps = {
@@ -42,6 +43,24 @@ type ChartBoxProps = {
   onSelect: (path: OrgPath) => void
   siblingCount: number
   isolate: boolean
+  /**
+   * Path length of the node whose direct children should be arranged as a
+   * rectangular grid instead of a horizontal row. Used to lay out L2 leaders
+   * (the children of each L1) in a wrapping rectangle.
+   */
+  gridDepth: number
+}
+
+/**
+ * Pick a column count that keeps the rectangle roughly squarish (slightly
+ * wider than tall) without exploding on very large teams.
+ */
+function rectangularColumns(count: number): number {
+  if (count <= 1) {
+    return 1
+  }
+  const raw = Math.round(Math.sqrt(count * 1.6))
+  return Math.min(5, Math.max(2, raw))
 }
 
 const POPOVER_WIDTH = 360
@@ -70,7 +89,7 @@ function deepestVisiblePath(path: OrgPath, expanded: Set<string>): OrgPath {
 const LEVEL_OPTIONS: { label: string; depth: number | 'all'; hint: string }[] = [
   { label: 'Top', depth: 0, hint: 'CEO and the operating lead' },
   { label: 'L1', depth: 1, hint: 'The same L1 leaders as before' },
-  { label: 'L2', depth: 2, hint: 'The same L2 leaders, then projects under them' },
+  { label: 'L2', depth: 2, hint: 'L2 leaders with their projects listed on each card' },
 ]
 
 function findCard(scroller: HTMLElement | null, path: OrgPath): HTMLElement | null {
@@ -90,15 +109,23 @@ function ChartBox({
   onSelect,
   siblingCount,
   isolate,
+  gridDepth,
 }: ChartBoxProps) {
   const key = pathKey(path)
   const selected = key === pathKey(selectedPath)
   const onTrail = path.length <= selectedPath.length && path.every((index, i) => selectedPath[i] === index)
-  const hasChildren = node.children.length > 0
+  const inlineProjects = hasProjectChildren(node)
+  const projectCount = inlineProjects ? node.children.length : 0
+  const hasChildren = node.children.length > 0 && !inlineProjects
   const isOpen = hasChildren && expanded.has(key)
   const badge = headcountLabel(node, showRollup)
-  const tone = divisionTone(node.division ?? node.section)
-  const projectCount = hasProjectChildren(node) ? node.children.length : 0
+  const tone = isProjectNode(node) ? 'project' : divisionTone(node.division ?? node.section)
+  const selectedProjectIndex =
+    inlineProjects &&
+    selectedPath.length === path.length + 1 &&
+    isPathWithin(selectedPath, path)
+      ? selectedPath[path.length]
+      : null
 
   // While a branch is isolated, an ancestor of the selection shows only the
   // child that leads to it, so peer branches do not crowd the view.
@@ -107,6 +134,11 @@ function ChartBox({
     .map((child, index) => ({ child, index }))
     .filter(({ index }) => !leadsToSelection || index === selectedPath[path.length])
   const hiddenPeers = node.children.length - shownChildren.length
+  // Arrange this node's children as a rectangular grid when they are the L2
+  // layer. A single leftover child (e.g. while isolating a branch) falls back
+  // to the standard column so the rectangle does not look like a stray box.
+  const useRectGrid = path.length === gridDepth && shownChildren.length > 1
+  const gridCols = useRectGrid ? rectangularColumns(shownChildren.length) : undefined
 
   function onKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>) {
     const index = path[path.length - 1] ?? 0
@@ -136,25 +168,33 @@ function ChartBox({
     >
       <button
         type="button"
-        className={`org-box org-box-main division-${tone} ${selected ? 'is-selected' : ''} ${onTrail ? 'is-trail' : ''} ${isProjectNode(node) ? 'is-project' : ''}`}
+        className={`org-box org-box-main division-${tone} ${selected ? 'is-selected' : ''} ${onTrail ? 'is-trail' : ''} ${isProjectNode(node) ? 'is-project' : ''} ${inlineProjects ? 'has-inline-projects' : ''}`}
         aria-expanded={hasChildren ? isOpen : undefined}
         onClick={() => onSelect(path)}
         onKeyDown={onKeyDown}
       >
         <span className="org-box-body">
-          {node.departmentCategory ?? node.division ?? node.section ? (
-            <span className="org-box-dept">{node.departmentCategory ?? node.division ?? node.section}</span>
-          ) : null}
+          
           <span className="org-box-name">{node.name}</span>
           <span className="org-box-title">{node.designation}</span>
-          {projectCount > 0 || badge ? (
-            <span className="org-box-meta">
-              {projectCount > 0 ? (
+          {inlineProjects ? (
+            <>
+              <span className="org-box-meta">
                 <span className="org-box-projects">
                   {projectCount} {projectCount === 1 ? 'project' : 'projects'}
                 </span>
-              ) : null}
-              {badge ? <span className="org-box-badge">{badge}</span> : null}
+                {badge ? <span className="org-box-badge">{badge}</span> : null}
+              </span>
+              <ManagerProjectList
+                projects={node.children}
+                variant="chart"
+                selectedIndex={selectedProjectIndex}
+                onSelectProject={(index) => onSelect([...path, index])}
+              />
+            </>
+          ) : badge ? (
+            <span className="org-box-meta">
+              <span className="org-box-badge">{badge}</span>
             </span>
           ) : null}
         </span>
@@ -167,7 +207,11 @@ function ChartBox({
       ) : null}
 
       {isOpen ? (
-        <div className="org-kids" role="group">
+        <div
+          className={`org-kids ${useRectGrid ? 'is-grid' : ''}`}
+          role="group"
+          style={useRectGrid ? ({ '--l2-cols': gridCols } as CSSProperties) : undefined}
+        >
           {shownChildren.map(({ child, index }) => (
             <div className="org-branch" key={pathKey([...path, index])}>
               <ChartBox
@@ -179,6 +223,7 @@ function ChartBox({
                 onSelect={onSelect}
                 siblingCount={node.children.length}
                 isolate={isolate}
+                gridDepth={gridDepth}
               />
             </div>
           ))}
@@ -229,6 +274,12 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
   const activeFocusPath = focusPath && isPathWithin(selectedPath, focusPath) ? focusPath : null
   const chartRoot = activeFocusPath ? getFocusedNode(root, activeFocusPath) : root
   const chartRootPath = activeFocusPath ?? []
+  // The rectangular L2 grid should appear beneath each L1 leader. From the
+  // true root that means depth = leadershipOffset + 1 (skipping the CEO →
+  // operating-lead chain); from a focused subtree it is simply one below the
+  // focus, matching how the L1/L2 dock buttons compute their depths.
+  const l1PathLength =
+    chartRootPath.length + (chartRootPath.length === 0 ? leadershipOffset(chartRoot) : 0) + 1
 
   // Reveal a newly selected person and their team once, rather than forcing
   // ancestors open on every render, which would defeat the collapse controls.
@@ -540,6 +591,40 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
     setZoomLocked(false)
   }, [])
 
+  // Direct reports of each L1 leader share one card height, taken from the
+  // tallest card in that group. Other levels keep their own sizes.
+  useLayoutEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) {
+      return
+    }
+
+    function equalizeLevelOneReports() {
+      canvas?.querySelectorAll<HTMLElement>('.org-kids.is-grid').forEach((grid) => {
+        const boxes = Array.from(
+          grid.querySelectorAll<HTMLElement>(':scope > .org-branch > .org-node > .org-box'),
+        )
+        if (boxes.length < 2) {
+          boxes.forEach((box) => {
+            box.style.height = ''
+          })
+          return
+        }
+        boxes.forEach((box) => {
+          box.style.height = 'auto'
+        })
+        const height = boxes.reduce((tallest, box) => Math.max(tallest, box.offsetHeight), 0)
+        boxes.forEach((box) => {
+          box.style.height = `${height}px`
+        })
+      })
+    }
+
+    equalizeLevelOneReports()
+    window.addEventListener('resize', equalizeLevelOneReports)
+    return () => window.removeEventListener('resize', equalizeLevelOneReports)
+  }, [chartRoot, expanded, compact, isolate, selectedPath])
+
   useLayoutEffect(() => {
     if (hasFitted.current) {
       return
@@ -676,6 +761,7 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
             onSelect={activate}
             siblingCount={1}
             isolate={isolate}
+            gridDepth={l1PathLength}
           />
         </div>
       </div>

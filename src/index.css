@@ -102,6 +102,8 @@ p {
 }
 
 .app-bar {
+  --bar-pad: 20px;
+  --logo-size: 54px;
   position: relative;
   z-index: 50;
   flex: none;
@@ -109,8 +111,9 @@ p {
   justify-content: space-between;
   gap: 16px;
   align-items: center;
-  min-height: 56px;
-  padding: 8px 20px;
+  height: calc(var(--logo-size) + 17px);
+  padding: 8px var(--bar-pad);
+  overflow: visible;
   background: var(--panel);
   border-bottom: 1px solid var(--line);
   isolation: isolate;
@@ -133,14 +136,26 @@ p {
   flex: none;
   display: flex;
   align-items: center;
-  height: 46px;
+  height: auto;
   margin: 0;
-  overflow: hidden;
+  padding-left: calc((var(--logo-size) + 16px) * 256 / 213 + 14px);
+}
+
+.app-mark {
+  position: absolute;
+  left: var(--bar-pad);
+  top: 0;
+  z-index: 2;
+  display: block;
+  /* Blue "Certified" band starts at 213/362 of the badge, on the header border. */
+  height: calc(100% * 362 / 213);
+  width: auto;
+  pointer-events: none;
 }
 
 .app-logo {
   display: block;
-  height: 76px;
+  height: var(--logo-size);
   width: auto;
 }
 
@@ -520,9 +535,19 @@ p {
   --division-soft: #222a36;
 }
 
+[data-theme='dark'] .division-project {
+  --division: #2dd4bf;
+  --division-soft: #0f2e2a;
+}
+
 .division-neutral {
   --division: #667085;
   --division-soft: #f2f4f7;
+}
+
+.division-project {
+  --division: #0d9488;
+  --division-soft: #ecfdf8;
 }
 
 .person-details {
@@ -1321,6 +1346,26 @@ code {
   align-items: center;
 }
 
+.org-box.has-inline-projects {
+  height: auto;
+  min-height: 0;
+  max-height: none;
+  width: 204px;
+}
+
+.org-box.has-inline-projects .org-box-body {
+  gap: 1px;
+  padding: 6px 10px 7px;
+}
+
+.org-box.has-inline-projects .org-box-name {
+  -webkit-line-clamp: 1;
+}
+
+.org-box.has-inline-projects .org-box-title {
+  -webkit-line-clamp: 1;
+}
+
 .org-box {
   width: 188px;
   height: 112px;
@@ -1391,6 +1436,31 @@ code {
   box-shadow: 0 0 0 2px rgba(31, 77, 122, 0.18), var(--shadow);
 }
 
+.org-box.is-project {
+  background: var(--division-soft);
+  border-color: color-mix(in srgb, var(--division) 32%, var(--line));
+}
+
+.org-box.is-project:hover {
+  border-color: var(--division);
+}
+
+.org-box.is-project.is-selected {
+  border-color: var(--division);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--division) 35%, transparent), var(--shadow);
+}
+
+.org-box.is-project .org-box-title {
+  color: color-mix(in srgb, var(--division) 55%, var(--muted));
+  font-weight: 600;
+}
+
+.card.is-project {
+  background: var(--division-soft);
+  border-color: color-mix(in srgb, var(--division) 32%, var(--line));
+  border-top: 3px solid var(--division);
+}
+
 .org-box-dept,
 .org-box-name,
 .org-box-title {
@@ -1433,9 +1503,119 @@ code {
   line-height: 1.25;
 }
 
+.org-box.has-inline-projects .org-box-meta {
+  margin-top: 2px;
+}
+
 .org-box-projects {
   color: var(--division, var(--accent-dark));
   font-weight: 700;
+}
+
+.manager-project-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  border-top: 1px solid color-mix(in srgb, var(--line) 85%, transparent);
+  padding-top: 5px;
+}
+
+.manager-project-list li,
+.manager-project-list button {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  width: 100%;
+  text-align: left;
+  line-height: 1.35;
+}
+
+.manager-project-list--chart {
+  flex: none;
+  margin-top: 3px;
+  padding-top: 3px;
+  font-size: 0.64rem;
+  line-height: 1.2;
+}
+
+.manager-project-list--chart li + li {
+  margin-top: 1px;
+}
+
+.org-box.has-inline-projects .manager-project-list button {
+  padding: 0;
+  line-height: 1.25;
+}
+
+.manager-project-list--card {
+  font-size: 0.78rem;
+  margin-top: 12px;
+  padding-top: 10px;
+}
+
+.manager-project-list--card li + li {
+  margin-top: 4px;
+}
+
+.manager-project-list-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink);
+}
+
+.manager-project-list-count {
+  flex: none;
+  color: var(--division, var(--accent-dark));
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.manager-project-list button {
+  margin: 0;
+  padding: 1px 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+.manager-project-list button:hover {
+  background: var(--hover-fill);
+}
+
+.manager-project-list button.is-selected {
+  background: var(--search-active);
+}
+
+.manager-project-list button.is-selected .manager-project-list-name {
+  font-weight: 650;
+}
+
+.card:has(.manager-project-list) {
+  height: 280px;
+  min-height: 280px;
+}
+
+.current-projects {
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.current-projects-title {
+  margin: 0 0 4px;
+  font-size: 0.85rem;
+  font-weight: 650;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
 }
 
 .org-box-badge {
@@ -1503,6 +1683,51 @@ code {
   display: none;
 }
 
+/*
+ * Rectangular L2 layout: children of any L1 leader render as a wrapping
+ * grid inside a bordered rectangle rather than one long horizontal row.
+ * The single vertical stem from the L1 card drops into the top of the
+ * rectangle, and the per-child T-connectors are hidden because they would
+ * not span multiple rows cleanly.
+ */
+.org-kids.is-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--l2-cols, 3), max-content);
+  justify-content: center;
+  align-items: stretch;
+  gap: 14px 14px;
+  margin-top: var(--stem);
+  padding: 16px 16px 18px;
+  padding-top: 16px;
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  background: var(--fill);
+}
+
+.org-kids.is-grid::before {
+  /* Lift the stem into the margin gap so the rectangle border sits below it. */
+  top: calc(var(--stem) * -1);
+  height: var(--stem);
+}
+
+.org-kids.is-grid > .org-branch {
+  padding: 0;
+}
+
+.org-kids.is-grid > .org-branch::before,
+.org-kids.is-grid > .org-branch::after {
+  display: none;
+}
+
+.chart-scroller.is-compact .org-kids.is-grid {
+  gap: 10px 10px;
+  padding: 12px 12px 14px;
+}
+
+.chart-scroller.is-compact .org-kids.is-grid > .org-branch {
+  padding: 0;
+}
+
 .org-roster {
   position: relative;
   margin-top: var(--stem);
@@ -1545,6 +1770,13 @@ code {
 .chart-scroller.is-compact .org-box {
   width: 166px;
   height: 102px;
+}
+
+.chart-scroller.is-compact .org-box.has-inline-projects {
+  width: 180px;
+  height: auto;
+  min-height: 0;
+  max-height: none;
 }
 
 .chart-scroller.is-compact .org-box-body {
@@ -1630,7 +1862,7 @@ code {
 
 @media (max-width: 760px) {
   .app-bar {
-    padding: 8px 12px;
+    --bar-pad: 12px;
   }
 
   .path-dock {

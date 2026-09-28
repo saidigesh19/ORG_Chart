@@ -372,57 +372,95 @@ type OrgMapping = {
 }
 
 function parseMapping(rows: string[][]): OrgMapping | null {
-  const compact = rows.map((row) => row.map((cell) => (cell ?? '').trim())).filter((row) => row.some((cell) => cell !== ''))
+  // Keep the original column positions – L2 names live in the same column
+  // as their L1 lead, so we must not compact/filter cells away.
+  const trimmed = rows.map((row) => row.map((cell) => (cell ?? '').trim()))
 
   let rootName: string | undefined
-  let leads: string[] = []
-  const reports: string[][] = []
-  let sawLeads = false
+  let leadRowIndex = -1
+  const leadByColumn = new Map<number, string>()
 
-  for (const row of compact) {
+  for (let i = 0; i < trimmed.length; i += 1) {
+    const row = trimmed[i]
     const texts = row.filter((cell) => cell !== '' && !isNumericCell(cell) && !/^(ceo|grand total)$/i.test(cell))
-    const numbers = row.filter((cell) => isNumericCell(cell))
     if (texts.length === 0) {
       continue
     }
-    if (numbers.length > 0 && sawLeads) {
-      break
-    }
-    if (!sawLeads && texts.length === 1 && !rootName) {
+    if (texts.length === 1 && !rootName && leadRowIndex === -1) {
       rootName = texts[0]
       continue
     }
-    if (!sawLeads && texts.length >= 3) {
-      leads = texts
-      sawLeads = true
-      continue
-    }
-    if (sawLeads) {
-      reports.push(row)
+    if (texts.length >= 3 && leadRowIndex === -1) {
+      row.forEach((cell, column) => {
+        if (cell !== '' && !isNumericCell(cell) && !/^(ceo|grand total)$/i.test(cell)) {
+          leadByColumn.set(column, cell)
+        }
+      })
+      leadRowIndex = i
+      break
     }
   }
 
-  if (leads.length === 0) {
+  if (leadByColumn.size === 0) {
     return null
   }
 
-  return {
-    rootName,
-    branches: leads.map((lead, index) => ({
-      lead,
-      reports: reports.map((row) => row[index]?.trim() ?? '').filter((name) => name !== '' && !isNumericCell(name)),
-    })),
+  // A row like ["Ramakrishna Rao Bodi", "14", "14", ...] marks the start of
+  // the project-count summary underneath the L1/L2 grid, so we stop there.
+  function isSummaryRow(row: string[]): boolean {
+    const nonEmpty = row.filter((cell) => cell !== '')
+    if (nonEmpty.length < 2) {
+      return false
+    }
+    const firstNonEmptyIndex = row.findIndex((cell) => cell !== '')
+    const firstIsText = firstNonEmptyIndex >= 0 && !isNumericCell(row[firstNonEmptyIndex])
+    if (!firstIsText) {
+      return false
+    }
+    return nonEmpty.slice(1).every((cell) => isNumericCell(cell))
   }
+
+  const reportsByColumn = new Map<number, string[]>()
+  for (let i = leadRowIndex + 1; i < trimmed.length; i += 1) {
+    const row = trimmed[i]
+    if (row.some((cell) => /^grand total$/i.test(cell))) {
+      break
+    }
+    if (isSummaryRow(row)) {
+      break
+    }
+    for (const [column] of leadByColumn) {
+      const cell = row[column]
+      if (!cell || isNumericCell(cell) || /^(ceo|grand total)$/i.test(cell)) {
+        continue
+      }
+      const list = reportsByColumn.get(column) ?? []
+      list.push(cell)
+      reportsByColumn.set(column, list)
+    }
+  }
+
+  const branches: MappingBranch[] = Array.from(leadByColumn.entries())
+    .sort((a, b) => a[0] - b[0])
+    .map(([column, lead]) => ({
+      lead,
+      reports: reportsByColumn.get(column) ?? [],
+    }))
+
+  return { rootName, branches }
 }
 
 function findNamedNode(nodes: OrgNode[], name: string): OrgNode | undefined {
   return nodes.find((node) => namesLikelyMatch(node.name, name))
 }
 
-function applyMapping(nodes: OrgNode[], mapping: OrgMapping, warnings: string[]) {
+function applyMapping(nodes: OrgNode[], mapping: OrgMapping, warnings: string[], ceoName?: string) {
   function ensure(name: string): OrgNode {
     const existing = findNamedNode(nodes, name)
     if (existing) {
+      if (existing.name.trim().toLowerCase() !== name.trim().toLowerCase()) {
+        existing.name = name
+      }
       return existing
     }
     const stub: OrgNode = {
@@ -446,7 +484,27 @@ function applyMapping(nodes: OrgNode[], mapping: OrgMapping, warnings: string[])
     })
   }
 
-  const root = (mapping.rootName ? ensure(mapping.rootName) : nodes.find((node) => node.children.length > 0)) ?? nodes[0]
+  let root: OrgNode | undefined
+  if (mapping.rootName) {
+    root = ensure(mapping.rootName)
+  } else if (ceoName) {
+    // Mapping has no named root. Hang every L1 leader directly off the CEO
+    // so they appear on the level-1 row and report to the CEO.
+    root = ensure(ceoName)
+    if (!root.designation || root.designation === 'Listed in Mapping') {
+      root.designation = 'CEO'
+      root.division = root.division ?? 'Management'
+      root.departmentCategory = root.departmentCategory ?? 'Management'
+      root.section = root.section ?? 'Management'
+    }
+    detach(root)
+  } else {
+    const structuralRoots = nodes.filter((node) => !nodes.some((parent) => parent.children.includes(node)))
+    root =
+      structuralRoots.length === 1
+        ? structuralRoots[0]
+        : (nodes.find((node) => node.children.length > 0) ?? nodes[0])
+  }
   if (!root) {
     return
   }
@@ -468,6 +526,53 @@ function applyMapping(nodes: OrgNode[], mapping: OrgMapping, warnings: string[])
       }
     })
   })
+
+  // The Mapping sheet is authoritative: an L1's direct reports must be exactly
+  // the L2 names listed under it. Anyone else who ended up under an L1 (because
+  // the employee sheet's Manager column pointed at the L1) is removed along
+  // with any subtree that was only reachable through them.
+  function dropSubtree(target: OrgNode) {
+    target.children.slice().forEach(dropSubtree)
+    target.children = []
+    const index = nodes.indexOf(target)
+    if (index >= 0) {
+      nodes.splice(index, 1)
+    }
+  }
+
+  let removedTotal = 0
+  mapping.branches.forEach((branch) => {
+    const lead = findNamedNode(nodes, branch.lead)
+    if (!lead) {
+      return
+    }
+    const allowed = new Set<OrgNode>()
+    branch.reports.forEach((reportName) => {
+      const report = findNamedNode(nodes, reportName)
+      if (report) {
+        allowed.add(report)
+      }
+    })
+    const kept: OrgNode[] = []
+    const dropped: OrgNode[] = []
+    lead.children.forEach((child) => {
+      if (allowed.has(child)) {
+        kept.push(child)
+      } else {
+        dropped.push(child)
+      }
+    })
+    if (dropped.length > 0) {
+      lead.children = kept
+      dropped.forEach(dropSubtree)
+      removedTotal += dropped.length
+    }
+  })
+  if (removedTotal > 0) {
+    warnings.push(
+      `${removedTotal} L2 report${removedTotal === 1 ? '' : 's'} not in the Mapping sheet ${removedTotal === 1 ? 'was' : 'were'} removed to match the sheet exactly.`,
+    )
+  }
 
   const leadOrder = mapping.branches.map((branch) => branch.lead)
   root.children.sort((a, b) => {
@@ -672,27 +777,35 @@ export function workbookToOrg(buffer: ArrayBuffer): WorkbookOrgData {
     }
   })
 
+  const ceoName = valueOrUndefined(rows.find((row) => row.ceo)?.ceo ?? '')
+
   const mappingSheet = sheets.find((sheet) => /map/i.test(sheet.name))
   const mapping = mappingSheet ? parseMapping(mappingSheet.rows) : null
   if (mapping) {
-    applyMapping(nodes, mapping, warnings)
+    applyMapping(nodes, mapping, warnings, ceoName)
     warnings.push(`L1/L2 layout was read from ${mappingSheet?.name}.`)
     mergePivot(pivot, parseCountGroups(mappingSheet?.rows ?? [], knownName))
   }
 
-  const roots = nodes.filter((node) => !nodes.some((parent) => parent.children.includes(node)))
+  const structuralRoots = nodes.filter((node) => !nodes.some((parent) => parent.children.includes(node)))
+  const ceoNode = ceoName ? findNamedNode(nodes, ceoName) : undefined
+  // Drop empty orphan rows so the CEO is the chart root, not buried under an Organisation node.
+  const chartRoots =
+    ceoNode && structuralRoots.includes(ceoNode)
+      ? structuralRoots.filter((node) => node === ceoNode || node.children.length > 0)
+      : structuralRoots
+
   let businessRoot =
-    roots.length === 1
-      ? roots[0]
+    chartRoots.length === 1
+      ? chartRoots[0]
       : {
           name: 'Organisation',
-          designation: `${roots.length} top-level reporting lines`,
+          designation: `${chartRoots.length} top-level reporting lines`,
           section: null,
           count: 0,
-          children: roots,
+          children: chartRoots,
         }
 
-  const ceoName = valueOrUndefined(rows.find((row) => row.ceo)?.ceo ?? '')
   let extraTop = 0
   if (ceoName && !namesLikelyMatch(businessRoot.name, ceoName)) {
     businessRoot = {
@@ -715,8 +828,8 @@ export function workbookToOrg(buffer: ArrayBuffer): WorkbookOrgData {
     2 + extraTop,
   )
 
-  if (roots.length > 1) {
-    warnings.push(`${roots.length} top-level reporting lines are grouped under an Organisation node.`)
+  if (chartRoots.length > 1) {
+    warnings.push(`${chartRoots.length} top-level reporting lines are grouped under an Organisation node.`)
   }
 
   return { root, employeeCount: rows.length, warnings }

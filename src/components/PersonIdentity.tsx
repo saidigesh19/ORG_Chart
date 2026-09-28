@@ -1,5 +1,5 @@
 import type { OrgNode } from '../types/org'
-import { divisionTone, headcountLabel, initials } from '../lib/org-tree'
+import { divisionTone, headcountLabel, initials, isProjectNode } from '../lib/org-tree'
 
 type PersonIdentityProps = {
   node: OrgNode
@@ -55,7 +55,7 @@ export function PersonDetails({ node }: { node: OrgNode }) {
 
 export function PersonIdentity({ node, showRollup, size = 'card', details }: PersonIdentityProps) {
   const badge = headcountLabel(node, showRollup)
-  const tone = divisionTone(node.division ?? node.section)
+  const tone = isProjectNode(node) ? 'project' : divisionTone(node.division ?? node.section)
   const showDetails = details ?? size === 'hero'
 
   return (

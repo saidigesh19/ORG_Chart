@@ -12,6 +12,19 @@ type ReportsGridProps = {
 export function ReportsGrid({ parent, parentPath, showRollup, onOpen }: ReportsGridProps) {
   const projects = hasProjectChildren(parent)
 
+  if (projects) {
+    return (
+      <div className="empty" role="status">
+        <p className="empty-kicker">Projects on card</p>
+        <h2>{parent.name}&apos;s projects</h2>
+        <p>
+          Each project and headcount is listed on this leader&apos;s card in the chart and in the list view one level
+          up.
+        </p>
+      </div>
+    )
+  }
+
   if (parent.children.length === 0) {
     return (
       <div className="empty" role="status">

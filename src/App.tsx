@@ -8,12 +8,14 @@ import {
   getTrail,
   parentPath,
   parseHashPath,
+  hasProjectChildren,
   rollupHeadcount,
   toHash,
 } from './lib/org-tree'
 import type { OrgNode, OrgPath } from './types/org'
 import { Breadcrumbs } from './components/Breadcrumbs'
 import { OrgChart } from './components/OrgChart'
+import { ManagerProjectList } from './components/ManagerProjectList'
 import { PersonIdentity } from './components/PersonIdentity'
 import { ReportsGrid } from './components/ReportsGrid'
 import { SearchBox } from './components/SearchBox'
@@ -145,6 +147,7 @@ export default function App() {
       <header className="app-bar">
         <div className="app-bar-start">
           <h1 className="app-title">
+            <img className="app-mark" src="/icon2.webp" alt="Great Place To Work Certified" />
             <img className="app-logo" src="/icon1.png" alt="iSpace" />
           </h1>
         </div>
@@ -186,6 +189,12 @@ export default function App() {
                 <p className="current-note">
                   This branch covers {formatPeople(rolled)} when descendant counts are included.
                 </p>
+              ) : null}
+              {hasProjectChildren(current) ? (
+                <section className="current-projects" aria-label={`Projects under ${current.name}`}>
+                  <h2 className="current-projects-title">Projects</h2>
+                  <ManagerProjectList projects={current.children} variant="card" />
+                </section>
               ) : null}
             </section>
             <ReportsGrid parent={current} parentPath={path} showRollup onOpen={navigate} />

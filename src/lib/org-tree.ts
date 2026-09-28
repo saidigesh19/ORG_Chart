@@ -179,6 +179,17 @@ export function hasProjectChildren(node: OrgNode): boolean {
   return node.children.length > 0 && node.children.every(isProjectNode)
 }
 
+/** Headcount shown beside a project name in manager cards. */
+export function projectMemberCount(node: OrgNode): number {
+  if (node.count != null) {
+    return node.count
+  }
+  if (node.members?.length) {
+    return node.members.length
+  }
+  return 1
+}
+
 export function orgGroupRank(node: OrgNode): number {
   const division = (node.division ?? node.section ?? '').trim().toLowerCase()
   const department = (node.department ?? '').trim().toLowerCase()
