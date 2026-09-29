@@ -177,7 +177,13 @@ function ChartBox({
       return true
     })
   const hiddenPeers = spineEntries.length - shownChildren.length
-  const peerIndexes = [...sideEntries, ...shownChildren]
+  // Balu sits with the L1 row. Top shows only the CEO and the operating lead,
+  // and closing the CEO hides Balu with the rest of that team.
+  const l1Open = spineEntries.some(({ index }) => expanded.has(pathKey([...path, index])))
+  const visibleSide = isOpen
+    ? sideEntries.filter(({ index }) => l1Open || expanded.has(pathKey([...path, index])))
+    : []
+  const peerIndexes = [...visibleSide, ...shownChildren]
     .sort((left, right) => left.index - right.index)
     .map(({ index }) => index)
   // Arrange this node's children as a rectangular grid when they are the L2
@@ -250,7 +256,7 @@ function ChartBox({
         </span>
       </button>
 
-      {sideEntries.map(({ child, index }) => (
+      {visibleSide.map(({ child, index }) => (
         <div className="org-side" key={pathKey([...path, index])}>
           <span className="org-side-link" aria-hidden="true">
             <span className="org-side-link-h" />
@@ -468,6 +474,7 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
     }
     const fallback = catalog.find((branch) => branchKeys.has(pathKey(branch.path)))
     if (fallback && pathKey(fallback.path) !== pathKey(selectedPath)) {
+      skipRevealRef.current = true
       onSelect(fallback.path)
     }
   }, [branchKeys, selectedPath, chartRoot, chartRootKey, onSelect])
@@ -984,8 +991,17 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
       return
     }
     const offset = chartRootPath.length === 0 ? leadershipOffset(chartRoot) : 0
-    setExpanded(new Set(keysToDepth(chartRoot, chartRootPath.length + offset + depth, chartRootPath)))
-    const clipped = selectedPath.slice(0, offset + depth)
+    const nextExpanded = new Set(keysToDepth(chartRoot, chartRootPath.length + offset + depth, chartRootPath))
+    setExpanded(nextExpanded)
+    let clipped = selectedPath.slice(0, offset + depth)
+    const clippedNode = getNodeAtPath(root, clipped)
+    if (clippedNode?.layout === 'side' && !nextExpanded.has(pathKey(clipped))) {
+      const parent = getNodeAtPath(root, clipped.slice(0, -1))
+      const spineIndex = parent?.children.findIndex((child) => child.layout !== 'side' && !isProjectNode(child)) ?? -1
+      if (spineIndex >= 0) {
+        clipped = [...clipped.slice(0, -1), spineIndex]
+      }
+    }
     setRevealedKey(pathKey(clipped))
     if (pathKey(clipped) !== pathKey(selectedPath)) {
       onSelect(clipped)
@@ -1026,6 +1042,9 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
       setIsolate(false)
       const fallback = branches.find((branch) => next.has(pathKey(branch.path)))
       if (fallback) {
+        // Keep the next visible team at its current depth. Selecting it would
+        // otherwise open that leader's reports.
+        skipRevealRef.current = true
         onSelect(fallback.path)
       }
     }

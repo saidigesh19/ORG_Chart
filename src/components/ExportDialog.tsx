@@ -28,22 +28,8 @@ type ExportDialogProps = {
   onConfirm: (setup: ChartExportSetup) => void
 }
 
-function chunkBranches(keys: string[], count: number): string[][] {
-  if (count <= 1) {
-    return [keys]
-  }
-  const size = Math.ceil(keys.length / count)
-  return Array.from({ length: count }, (_, index) => {
-    const slice = keys.slice(index * size, (index + 1) * size)
-    return slice.length > 0 ? slice : [...keys]
-  })
-}
-
-function assignPages(count: number, keys: string[], previous: PdfPageSetup[]): PdfPageSetup[] {
-  return chunkBranches(keys, count).map((branchKeys, index) => ({
-    depth: previous[index]?.depth ?? 'current',
-    branchKeys,
-  }))
+function blankPage(): PdfPageSetup {
+  return { depth: 'current', branchKeys: [] }
 }
 
 export function ExportDialog({ kind, branches, busy, status, onClose, onConfirm }: ExportDialogProps) {
@@ -52,11 +38,21 @@ export function ExportDialog({ kind, branches, busy, status, onClose, onConfirm 
   const branchKeys = branches.map((branch) => branch.key)
   const [size, setSize] = useState<PaperSize>('a4')
   const [orientation, setOrientation] = useState<PageOrientation>('landscape')
-  const [pages, setPages] = useState<PdfPageSetup[]>(() => assignPages(1, branchKeys, []))
+  const [pages, setPages] = useState<PdfPageSetup[]>(() => [{ depth: 'current', branchKeys }])
 
   useEffect(() => {
     dialogRef.current?.querySelector<HTMLElement>('button')?.focus()
   }, [])
+
+  const pageCount = pages.length
+  const previousPageCount = useRef(pageCount)
+  useEffect(() => {
+    if (pageCount > previousPageCount.current) {
+      const added = dialogRef.current?.querySelectorAll<HTMLElement>('.export-page')
+      added?.item(pageCount - 1)?.scrollIntoView({ block: 'nearest' })
+    }
+    previousPageCount.current = pageCount
+  }, [pageCount])
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -73,7 +69,12 @@ export function ExportDialog({ kind, branches, busy, status, onClose, onConfirm 
 
   function setPageCount(count: number) {
     const next = Math.min(PAGE_LIMIT, Math.max(1, count))
-    setPages((current) => assignPages(next, branchKeys, current))
+    setPages((current) => {
+      if (next > current.length) {
+        return [...current, ...Array.from({ length: next - current.length }, blankPage)]
+      }
+      return current.slice(0, next)
+    })
   }
 
   function setPageDepth(index: number, depth: PageDepth) {
@@ -193,8 +194,7 @@ export function ExportDialog({ kind, branches, busy, status, onClose, onConfirm 
                   </button>
                 </div>
                 <p className="export-hint">
-                  Changing the page count splits the teams across the pages again. Set what each page shows before you
-                  download.
+                  A new page is added at the end. Pages you already set keep their level and teams.
                 </p>
               </div>
 
