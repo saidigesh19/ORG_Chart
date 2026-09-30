@@ -212,7 +212,7 @@ function ChartBox({
     }
   }
 
-  return (
+    return (
     <div
       className="org-node"
       data-path={key}
@@ -238,7 +238,7 @@ function ChartBox({
                 <span className="org-box-projects">
                   {projectCount} {projectCount === 1 ? 'project' : 'projects'}
                 </span>
-                {badge ? <span className="org-box-badge">{badge}</span> : null}
+          {badge ? <span className="org-box-badge">{badge}</span> : null}
               </span>
               <ManagerProjectList
                 projects={projectEntries.map(({ child }) => child)}
@@ -254,7 +254,7 @@ function ChartBox({
             </span>
           ) : null}
         </span>
-      </button>
+          </button>
 
       {visibleSide.map(({ child, index }) => (
         <div className="org-side" key={pathKey([...path, index])}>
@@ -336,6 +336,7 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
     zoom: number
   } | null>(null)
   const [compact, setCompact] = useState(() => window.matchMedia('(max-width: 760px)').matches)
+  const compactTouched = useRef(false)
   const [isolate, setIsolate] = useState(false)
   const [branchKeys, setBranchKeys] = useState<Set<string> | null>(null)
   const [dockOpen, setDockOpen] = useState(false)
@@ -398,7 +399,7 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
         setExpanded((prev) => {
           const next = new Set(prev)
           reveal.forEach((key) => next.add(key))
-          return next
+    return next
         })
       }
     }
@@ -593,6 +594,13 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
       }
       const rect = card.getBoundingClientRect()
       const width = Math.min(POPOVER_WIDTH, window.innerWidth - POPOVER_GAP * 2)
+      if (window.innerWidth < 560) {
+        setProfileAt({
+          top: Math.max(POPOVER_GAP, Math.min(rect.bottom + 8, window.innerHeight * 0.22)),
+          left: POPOVER_GAP,
+        })
+        return
+      }
       const spaceRight = window.innerWidth - rect.right - POPOVER_GAP
       const spaceLeft = rect.left - POPOVER_GAP
       let left = rect.right + POPOVER_GAP
@@ -708,10 +716,10 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
     const width = Math.max(canvas.scrollWidth, 1)
     const height = Math.max(canvas.scrollHeight, 1)
     canvas.style.zoom = previous
-    const pad = 40
+    const pad = scroller.clientWidth < 560 ? 20 : 40
     const scale = Math.min((scroller.clientWidth - pad) / width, (scroller.clientHeight - pad) / height, 1)
     const narrow = scroller.clientWidth < 760
-    const floor = mode === 'auto' && narrow ? 70 : narrow ? 22 : 28
+    const floor = mode === 'auto' && narrow ? 56 : narrow ? 18 : 28
     const next = Math.max(floor, Math.min(100, Math.round(scale * 100)))
     setZoom((current) => (Math.abs(current - next) <= 1 ? current : next))
     setZoomLocked(false)
@@ -969,13 +977,37 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
   }, [])
 
   useEffect(() => {
+    const query = window.matchMedia('(max-width: 760px)')
+    function syncCompact() {
+      if (!compactTouched.current) {
+        setCompact(query.matches)
+      }
+    }
+    query.addEventListener('change', syncCompact)
+    return () => query.removeEventListener('change', syncCompact)
+  }, [])
+
+  useLayoutEffect(() => {
+    if (!hasFitted.current || zoomLocked) {
+      return
+    }
+    fitToView('auto')
+  }, [compact, fitToView, zoomLocked])
+
+  useEffect(() => {
     function onResize() {
       if (!zoomLocked) {
         fitToView('auto')
       }
     }
     window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
+    window.addEventListener('orientationchange', onResize)
+    window.visualViewport?.addEventListener('resize', onResize)
+    return () => {
+      window.removeEventListener('resize', onResize)
+      window.removeEventListener('orientationchange', onResize)
+      window.visualViewport?.removeEventListener('resize', onResize)
+    }
   }, [zoomLocked, fitToView])
 
   // The level controls describe the whole structure, so they release isolation
@@ -1187,7 +1219,7 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
           <PersonPanel
             node={previewNode}
             manager={managerNode}
-            showRollup={showRollup}
+          showRollup={showRollup}
             countScope={previewPath.length === level1Depth ? 'direct' : 'rollup'}
             variant="popover"
             onOpenManager={managerNode ? () => activate(parentPath(previewPath)) : undefined}
@@ -1340,7 +1372,10 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
                   aria-checked={compact}
                   className={compact ? 'is-on' : undefined}
                   title="Fit more people"
-                  onClick={() => setCompact(!compact)}
+                  onClick={() => {
+                    compactTouched.current = true
+                    setCompact(!compact)
+                  }}
                 />
               </div>
               <div className="dock-switch">
