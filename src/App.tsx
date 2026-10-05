@@ -121,7 +121,7 @@ export default function App() {
     return (
       <main className="shell">
         <div className="status-panel">
-          <h1>Unable to load the organisation chart</h1>
+          <h1>Data is unavailable</h1>
           <p>{error}</p>
           <p>
             Place a valid workbook at <code>public/Org Chart Data V2.xlsx</code> and refresh.
