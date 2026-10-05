@@ -121,7 +121,7 @@ export default function App() {
     return (
       <main className="shell">
         <div className="status-panel">
-          <h1>Please ask the development team to add or update the data.</h1>
+          <h1>Please ask the development team to add or update the required data.</h1>
           <p>{error}</p>
           <p>
             Place a valid workbook at <code>public/Org Chart Data V2.xlsx</code> and refresh.
