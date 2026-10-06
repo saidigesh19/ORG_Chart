@@ -177,8 +177,7 @@ function ChartBox({
       return true
     })
   const hiddenPeers = spineEntries.length - shownChildren.length
-  // Balu sits with the L1 row. Top shows only the CEO and the operating lead,
-  // and closing the CEO hides Balu with the rest of that team.
+
   const l1Open = spineEntries.some(({ index }) => expanded.has(pathKey([...path, index])))
   const visibleSide = isOpen
     ? sideEntries.filter(({ index }) => l1Open || expanded.has(pathKey([...path, index])))
