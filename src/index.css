@@ -1398,6 +1398,7 @@ code {
 .chart-canvas > .org-node {
   min-width: max-content;
   margin: 0 auto;
+  overflow: visible;
 }
 
 .chart-wrap.is-exporting .org-box:hover {

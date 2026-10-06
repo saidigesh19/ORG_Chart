@@ -717,9 +717,8 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
     setZoomLocked(false)
   }, [])
 
-  // Place Balu left of the stem between the CEO and Ramesh, and drop the
-  // level-1 row when his own report would cover those cards. Spacing is inline
-  // so the PDF snapshot keeps the same gaps after the chart is cloned.
+  // Place Balu to the left of the L1 row, beside Ramakrishna. Spacing is
+  // inline so the PDF snapshot keeps the same gaps after the chart is cloned.
   useLayoutEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) {
@@ -769,62 +768,97 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
 
       const zoomFactor = readZoom()
       const stem = readPx(node, '--stem', 18)
-      const gap = readPx(node, '--side-gap', 36)
-      const cardHeight = readPx(node, '--leader-card-height', 122)
       const cardGap = 24
       const sideCard = side.querySelector<HTMLElement>(':scope > .org-node > .org-box')
-      const cardWidth = sideCard ? sideCard.getBoundingClientRect().width / zoomFactor : 188
+      const l1Cards = levelKids
+        ? [...levelKids.querySelectorAll<HTMLElement>(':scope > .org-branch > .org-node > .org-box')]
+        : []
+      const firstL1 = l1Cards[0] ?? null
 
       const setKidsGap = (kids: HTMLElement, padding: number) => {
         kids.style.paddingTop = `${padding}px`
         kids.style.setProperty('--kids-stem', `${padding}px`)
       }
 
-      setKidsGap(ceoKids, cardHeight + stem * 2)
+      setKidsGap(ceoKids, stem)
       if (levelKids) {
         setKidsGap(levelKids, stem)
       }
 
-      const origin = node.getBoundingClientRect()
-      const local = (element: HTMLElement) => {
-        const box = element.getBoundingClientRect()
-        return {
-          top: (box.top - origin.top) / zoomFactor,
-          left: (box.left - origin.left) / zoomFactor,
-          width: box.width / zoomFactor,
-          height: box.height / zoomFactor,
+      const measure = () => {
+        const origin = node.getBoundingClientRect()
+        const local = (element: HTMLElement) => {
+          const box = element.getBoundingClientRect()
+          return {
+            top: (box.top - origin.top) / zoomFactor,
+            left: (box.left - origin.left) / zoomFactor,
+            width: box.width / zoomFactor,
+            height: box.height / zoomFactor,
+          }
         }
+        return { origin, local, ceoBox: local(ceo), l1Box: firstL1 ? local(firstL1) : null }
       }
-      const ceoBox = local(ceo)
-      let baluLeft = ceoBox.left - gap - cardWidth
-      const baluTop = ceoBox.top + ceoBox.height + stem * 2
 
-      const applySide = (left: number) => {
-        side.style.top = `${baluTop}px`
-        side.style.left = `${left}px`
-        const placed = side.getBoundingClientRect()
-        const baluCenter = (placed.left - origin.left) / zoomFactor + placed.width / zoomFactor / 2
+      const rowGap = () => {
+        const { local } = measure()
+        if (l1Cards.length > 1) {
+          const left = local(l1Cards[0])
+          const next = local(l1Cards[1])
+          return Math.max(8, next.left - left.left - left.width)
+        }
+        return 14
+      }
+
+      const placeBesideFirstL1 = () => {
+        if (!sideCard) {
+          return
+        }
+        const { local, ceoBox, l1Box } = measure()
+        const card = local(sideCard)
+        const gap = rowGap()
+        const targetLeft = (l1Box?.left ?? ceoBox.left) - gap - card.width
+        const targetTop = l1Box?.top ?? ceoBox.top + ceoBox.height + stem * 2
+        const currentLeft = Number.parseFloat(side.style.left) || 0
+        const currentTop = Number.parseFloat(side.style.top) || 0
+        side.style.left = `${currentLeft + (targetLeft - card.left)}px`
+        side.style.top = `${currentTop + (targetTop - card.top)}px`
+        const placed = local(sideCard)
         const ceoMid = ceoBox.top + ceoBox.height / 2
         const link = side.querySelector<HTMLElement>('.org-side-link')
         if (link) {
-          link.style.width = `${Math.max(ceoBox.left - baluCenter, 0) + 1}px`
-          link.style.height = `${Math.max(baluTop - ceoMid, 0)}px`
+          link.style.width = `${Math.max(ceoBox.left - (placed.left + placed.width / 2), 0) + 1}px`
+          link.style.height = `${Math.max(placed.top - ceoMid, 0)}px`
         }
       }
-      applySide(baluLeft)
+
+      const fitSideOnCanvas = () => {
+        if (!sideCard) {
+          return
+        }
+        const edge = 16
+        const { local } = measure()
+        const width = local(sideCard).width
+        node.style.paddingLeft = `${Math.ceil(width + rowGap() + edge)}px`
+        placeBesideFirstL1()
+        for (let step = 0; step < 3; step += 1) {
+          const card = measure().local(sideCard)
+          const neighbour = firstL1 ? measure().local(firstL1) : null
+          const clipped = card.left < edge
+          const overlap = neighbour ? card.left + card.width + rowGap() - neighbour.left : 0
+          if (!clipped && overlap <= 1) {
+            break
+          }
+          const extra = Math.max(clipped ? edge - card.left : 0, overlap > 1 ? overlap : 0)
+          node.style.paddingLeft = `${(Number.parseFloat(node.style.paddingLeft) || 0) + Math.ceil(extra)}px`
+          placeBesideFirstL1()
+        }
+      }
+
+      fitSideOnCanvas()
 
       const operating = node.querySelector<HTMLElement>(
         ':scope > .org-kids > .org-branch > .org-node > .org-box',
       )
-      if (operating) {
-        const lead = operating.getBoundingClientRect()
-        const sideBox = side.getBoundingClientRect()
-        const overlap = sideBox.right + gap * zoomFactor - lead.left
-        if (overlap > 1) {
-          baluLeft -= overlap / zoomFactor
-          applySide(baluLeft)
-        }
-      }
 
       const sideCards = () => [...side.querySelectorAll<HTMLElement>('.org-box')]
       const levelCards = () =>
@@ -852,7 +886,7 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
 
       const leadExtra = leadPush()
       if (leadExtra > 0) {
-        setKidsGap(ceoKids, cardHeight + stem * 2 + Math.ceil(leadExtra))
+        setKidsGap(ceoKids, stem + Math.ceil(leadExtra))
       }
       const reportExtra = reportPush()
       if (levelKids && reportExtra > 0) {
@@ -869,6 +903,8 @@ export function OrgChart({ root, selectedPath, showRollup, onSelect }: OrgChartP
         const current = Number.parseFloat(levelKids.style.paddingTop) || 0
         setKidsGap(levelKids, current + Math.ceil(reportAgain))
       }
+
+      fitSideOnCanvas()
     }
 
     place()
