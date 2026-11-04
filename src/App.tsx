@@ -151,7 +151,7 @@ export default function App() {
         <div className="app-bar-start">
           <h1 className="app-title">
             <img className="app-mark" src="/icon2.webp" alt="Great Place To Work Certified" />
-            <img className="app-logo" src="/icon1.png" alt="iSpace" />
+            <img className="app-logo" src="/icon1.png" alt="IM" />
           </h1>
         </div>
         <div className="app-bar-end">
