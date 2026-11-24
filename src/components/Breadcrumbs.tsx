@@ -6,6 +6,7 @@ type BreadcrumbsProps = {
   onNavigate: (path: OrgPath) => void
 }
 
+
 export function Breadcrumbs({ trail, onNavigate }: BreadcrumbsProps) {
   return (
     <nav className="crumbs" aria-label="Organisation path">
